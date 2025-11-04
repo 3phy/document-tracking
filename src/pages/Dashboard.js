@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   Typography,
-  Paper,
   List,
   ListItem,
   ListItemText,
@@ -13,7 +12,8 @@ import {
   Chip,
   CircularProgress,
   Alert,
-    Button,
+  Button,
+  TextField,
 } from '@mui/material';
 import {
   Description as DocumentIcon,
@@ -21,6 +21,7 @@ import {
   CheckCircle as ReceivedIcon,
   Pending as PendingIcon,
   TrendingUp as TrendingIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -41,28 +42,33 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // ✅ Only search (no sort)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredDocuments, setFilteredDocuments] = useState([]);
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
+  useEffect(() => {
+    handleSearch();
+  }, [searchQuery, recentDocuments]);
+
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem('token');
-      
-      // Get user info with department
       const userResponse = await axios.get(`${API_BASE_URL}/auth/verify.php`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (userResponse.data.success) {
         setUserDepartment(userResponse.data.user.department_name);
       }
-      
-      // Get dashboard stats
+
       const statsResponse = await axios.get(`${API_BASE_URL}/dashboard/stats.php`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (statsResponse.data.success) {
         setStats(statsResponse.data.stats);
         setRecentDocuments(statsResponse.data.recentDocuments || []);
@@ -77,21 +83,44 @@ const Dashboard = () => {
     }
   };
 
+  // ✅ Search logic only
+  const handleSearch = () => {
+    let docs = [...recentDocuments];
+    if (searchQuery.trim() !== '') {
+      const query = searchQuery.toLowerCase();
+      docs = docs.filter(
+        (doc) =>
+          doc.title.toLowerCase().includes(query) ||
+          (doc.department_name && doc.department_name.toLowerCase().includes(query)) ||
+          (doc.status && doc.status.toLowerCase().includes(query))
+      );
+    }
+    setFilteredDocuments(docs);
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
-      case 'outgoing': return 'primary';
-      case 'pending': return 'warning';
-      case 'received': return 'success';
-      default: return 'default';
+      case 'outgoing':
+        return 'primary';
+      case 'pending':
+        return 'warning';
+      case 'received':
+        return 'success';
+      default:
+        return 'default';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'outgoing': return <UploadIcon />;
-      case 'pending': return <PendingIcon />;
-      case 'received': return <ReceivedIcon />;
-      default: return <DocumentIcon />;
+      case 'outgoing':
+        return <UploadIcon />;
+      case 'pending':
+        return <PendingIcon />;
+      case 'received':
+        return <ReceivedIcon />;
+      default:
+        return <DocumentIcon />;
     }
   };
 
@@ -117,9 +146,12 @@ const Dashboard = () => {
         Dashboard
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Welcome back, {user?.name}! 
+        Welcome back, {user?.name}!
         {userDepartment && (
-          <span> You're viewing documents for the <strong>{userDepartment}</strong> department.</span>
+          <span>
+            {' '}
+            You're viewing documents for the <strong>{userDepartment}</strong> department.
+          </span>
         )}
         {!userDepartment && user?.role === 'staff' && (
           <span> You're not assigned to any department yet.</span>
@@ -127,29 +159,17 @@ const Dashboard = () => {
       </Typography>
 
       <Grid container spacing={3}>
-        {/* Stats Cards */}
+        {/* ✅ Stats Cards */}
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center">
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: 'primary.main',
-                    color: 'white',
-                    mr: 2,
-                  }}
-                >
+                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'primary.main', color: 'white', mr: 2 }}>
                   <DocumentIcon />
                 </Box>
                 <Box>
-                  <Typography variant="h4" component="div">
-                    {stats.totalDocuments}
-                  </Typography>
-                  <Typography color="text.secondary">
-                    Total Documents
-                  </Typography>
+                  <Typography variant="h4">{stats.totalDocuments}</Typography>
+                  <Typography color="text.secondary">Total Documents</Typography>
                 </Box>
               </Box>
             </CardContent>
@@ -160,24 +180,12 @@ const Dashboard = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center">
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: 'primary.light',
-                    color: 'white',
-                    mr: 2,
-                  }}
-                >
+                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'primary.light', color: 'white', mr: 2 }}>
                   <UploadIcon />
                 </Box>
                 <Box>
-                  <Typography variant="h4" component="div">
-                    {stats.outgoingDocuments}
-                  </Typography>
-                  <Typography color="text.secondary">
-                    Outgoing
-                  </Typography>
+                  <Typography variant="h4">{stats.outgoingDocuments}</Typography>
+                  <Typography color="text.secondary">Outgoing</Typography>
                 </Box>
               </Box>
             </CardContent>
@@ -188,24 +196,12 @@ const Dashboard = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center">
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: 'warning.main',
-                    color: 'white',
-                    mr: 2,
-                  }}
-                >
+                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'warning.main', color: 'white', mr: 2 }}>
                   <PendingIcon />
                 </Box>
                 <Box>
-                  <Typography variant="h4" component="div">
-                    {stats.pendingDocuments}
-                  </Typography>
-                  <Typography color="text.secondary">
-                    Pending
-                  </Typography>
+                  <Typography variant="h4">{stats.pendingDocuments}</Typography>
+                  <Typography color="text.secondary">Pending</Typography>
                 </Box>
               </Box>
             </CardContent>
@@ -216,44 +212,43 @@ const Dashboard = () => {
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center">
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    backgroundColor: 'success.main',
-                    color: 'white',
-                    mr: 2,
-                  }}
-                >
+                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'success.main', color: 'white', mr: 2 }}>
                   <ReceivedIcon />
                 </Box>
                 <Box>
-                  <Typography variant="h4" component="div">
-                    {stats.receivedDocuments}
-                  </Typography>
-                  <Typography color="text.secondary">
-                    Received
-                  </Typography>
+                  <Typography variant="h4">{stats.receivedDocuments}</Typography>
+                  <Typography color="text.secondary">Received</Typography>
                 </Box>
               </Box>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Recent Documents */}
+        {/* ✅ Recent Documents */}
         <Grid item xs={12} md={8}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Recent Documents
-              </Typography>
-              {recentDocuments.length > 0 ? (
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h6">Recent Documents</Typography>
+
+                {/* 🔍 Search Field Only */}
+                <TextField
+                  size="small"
+                  variant="outlined"
+                  placeholder="Search documents..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: <SearchIcon sx={{ mr: 1, color: 'gray' }} />,
+                  }}
+                />
+              </Box>
+
+              {(filteredDocuments.length > 0 ? filteredDocuments : recentDocuments).length > 0 ? (
                 <List>
-                  {recentDocuments.map((doc, index) => (
+                  {(filteredDocuments.length > 0 ? filteredDocuments : recentDocuments).map((doc, index) => (
                     <ListItem key={index} divider={index < recentDocuments.length - 1}>
-                      <ListItemIcon>
-                        {getStatusIcon(doc.status)}
-                      </ListItemIcon>
+                      <ListItemIcon>{getStatusIcon(doc.status)}</ListItemIcon>
                       <ListItemText
                         primary={doc.title}
                         secondary={
@@ -295,14 +290,14 @@ const Dashboard = () => {
                 </List>
               ) : (
                 <Typography color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                  No recent documents
+                  No matching documents
                 </Typography>
               )}
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Quick Actions */}
+        {/* ✅ Quick Actions */}
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>
@@ -327,16 +322,14 @@ const Dashboard = () => {
                   View All Documents
                 </Button>
                 {user?.role === 'admin' && (
-                  <>
-                    <Button
-                      variant="outlined"
-                      startIcon={<TrendingIcon />}
-                      fullWidth
-                      onClick={() => navigate('/reports')}
-                    >
-                      Generate Report
-                    </Button>
-                  </>
+                  <Button
+                    variant="outlined"
+                    startIcon={<TrendingIcon />}
+                    fullWidth
+                    onClick={() => navigate('/reports')}
+                  >
+                    Generate Report
+                  </Button>
                 )}
               </Box>
             </CardContent>

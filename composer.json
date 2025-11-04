@@ -1,0 +1,17 @@
+{
+    "require": {
+        "setasign/fpdi": "^2.6",
+        "picqer/php-barcode-generator": "^2.4",
+        "setasign/fpdf": "^1.8",
+        "dompdf/dompdf": "^3.1",
+        "endroid/qr-code": "^4.8",
+        "cloudconvert/cloudconvert-php": "^3.4",
+        "symfony/http-client": "^6.0",
+        "nyholm/psr7": "^1.8"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}

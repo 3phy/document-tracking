@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Visibility as VisibilityIcon, Print as PrintIcon } from '@mui/icons-material';
 import { Rnd } from 'react-rnd';
+
+
 import {
     Box,
     Typography,
@@ -87,6 +89,7 @@ const Documents = () => {
     const [selectedDocumentForAction, setSelectedDocumentForAction] = useState(null);
     const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
     const [previewDocument, setPreviewDocument] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
 
     useEffect(() => {
@@ -260,59 +263,18 @@ const Documents = () => {
     };
 
     const handlePrintDocument = () => {
-        const printContents = document.getElementById('printable-area').innerHTML;
-        const printWindow = window.open('', '', 'width=900,height=700');
-        printWindow.document.write(`
-    <html>
-      <head>
-        <title>Document Print</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-          }
+        if (!previewDocument?.id) return;
 
-          iframe {
-            width: 100%;
-            height: 95vh;
-            border: none;
-          }
+        const pdfUrl = `${API_BASE_URL}/documents/view.php?id=${previewDocument.id}`;
+        const printWindow = window.open(pdfUrl, '_blank');
 
-          /* ✅ Barcode stays small and fixed on printed paper */
-          .barcode-fixed {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: white;
-            padding: 5px;
-            border-radius: 6px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-            width: 140px !important;
-            height: auto !important;
-          }
-
-          @media print {
-            .barcode-fixed {
-              position: fixed;
-              top: 10px;
-              right: 10px;
-              transform: scale(0.9);
-              transform-origin: top right;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${printContents}
-      </body>
-    </html>
-  `);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
+        // Wait for PDF to load before triggering print
+        printWindow.onload = () => {
+            printWindow.focus();
+            printWindow.print();
+        };
     };
+
 
 
 
@@ -669,13 +631,14 @@ const Documents = () => {
     const getStatusColor = (status) => {
         const s = (status || '').toLowerCase();
         switch (s) {
-            case 'outgoing': return 'secondary';
+            case 'outgoing': return 'primary';
             case 'pending': return 'warning';
             case 'received': return 'success';
             case 'rejected': return 'error';
             default: return 'default';
         }
     };
+
 
 
 
@@ -748,6 +711,24 @@ const Documents = () => {
                     {successMessage}
                 </Alert>
             )}
+            <Box display="flex" justifyContent="flex-end" mb={2}>
+                <TextField
+                    variant="outlined"
+                    size="small"
+                    placeholder="Search by title, department, or received by..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <SearchIcon color="action" />
+                            </InputAdornment>
+                        ),
+                    }}
+                    sx={{ width: 350 }}
+                />
+            </Box>
+
 
             <Card>
                 <CardContent>
@@ -766,137 +747,166 @@ const Documents = () => {
                             </TableHead>
 
                             <TableBody>
-                                {documents.map((doc) => (
-                                    <TableRow key={doc.id}>
-                                        {/* 🧾 Title */}
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {doc.title}
-                                            </Typography>
-                                            {doc.description && (
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {doc.description}
+                                {documents
+                                    .filter((doc) => {
+                                        const term = searchTerm.toLowerCase();
+                                        return (
+                                            doc.title?.toLowerCase().includes(term) ||
+                                            doc.department_name?.toLowerCase().includes(term) ||
+                                            doc.current_department_name?.toLowerCase().includes(term) ||
+                                            doc.uploaded_by_name?.toLowerCase().includes(term)
+                                        );
+                                    })
+                                    .map((doc) => (
+                                        <TableRow key={doc.id}>
+
+                                            {/* 🧾 Title */}
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight="medium">
+                                                    {doc.title}
                                                 </Typography>
-                                            )}
-                                        </TableCell>
+                                                {doc.description && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {doc.description}
+                                                    </Typography>
+                                                )}
+                                            </TableCell>
 
-                                        {/* 🏢 Source Department */}
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {doc.upload_department_name || 'No Department'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Source Department
-                                            </Typography>
-                                        </TableCell>
+                                            {/* 🏢 Source Department */}
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight="medium">
+                                                    {doc.upload_department_name || 'No Department'}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Source Department
+                                                </Typography>
+                                            </TableCell>
 
-                                        {/* 🏢 Current Department */}
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {doc.current_department_name || 'No Department'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Current Department
-                                            </Typography>
-                                        </TableCell>
+                                            {/* 🏢 Current Department */}
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight="medium">
+                                                    {doc.current_department_name || 'No Department'}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Current Department
+                                                </Typography>
+                                            </TableCell>
 
-                                        {/* 🏢 Receiving Department */}
-                                        <TableCell>
-                                            <Typography variant="body2" fontWeight="medium">
-                                                {doc.department_name || 'No Department'}
-                                                <Tooltip title="Show Routing Path">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => handleShowRouting(doc)}
-                                                    >
-                                                        <RouteIcon fontSize="small" color="info" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Receiving Department
-                                            </Typography>
-                                        </TableCell>
-
-                                        {/* 📊 Status */}
-                                        <TableCell>
-                                            <Tooltip
-                                                title={
-                                                    getDisplayStatus(doc) === 'rejected'
-                                                        ? doc.cancel_note
-                                                            ? `Reason: ${doc.cancel_note}`
-                                                            : 'Rejected — no reason provided.'
-                                                        : ''
-                                                }
-                                                arrow
-                                            >
-                                                <Chip
-                                                    label={getDisplayStatus(doc)}
-                                                    color={getStatusColor(getDisplayStatus(doc))}
-                                                    size="small"
-                                                    sx={{
-                                                        textTransform: 'capitalize',
-                                                        cursor: getDisplayStatus(doc) === 'rejected' ? 'pointer' : 'default'
-                                                    }}
-                                                />
-                                            </Tooltip>
-                                        </TableCell>
-
-
-                                        {/* 👤 Created By */}
-                                        <TableCell>
-                                            <Typography variant="body2">
-                                                {doc.uploaded_by_name || 'Unknown'}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                {new Date(doc.uploaded_at).toLocaleDateString()}{" "}
-                                                {new Date(doc.uploaded_at).toLocaleTimeString()}
-                                            </Typography>
-                                        </TableCell>
-
-                                        {/* ⚙️ Actions */}
-                                        <TableCell>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                {/* Cancel */}
-                                                {canCancelDocument(doc) && (
-                                                    <Tooltip title="Cancel Document">
+                                            {/* 🏢 Receiving Department */}
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight="medium">
+                                                    {doc.department_name || 'No Department'}
+                                                    <Tooltip title="Show Routing Path">
                                                         <IconButton
                                                             size="small"
-                                                            onClick={() => handleCancelDocument(doc)}
-                                                            color="error"
+                                                            onClick={() => handleShowRouting(doc)}
                                                         >
-                                                            <CancelIcon />
+                                                            <RouteIcon fontSize="small" color="info" />
                                                         </IconButton>
                                                     </Tooltip>
-                                                )}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Receiving Department
+                                                </Typography>
+                                            </TableCell>
 
-                                                {/* Forward */}
-                                                {canForwardDocument(doc) && (
-                                                    <Tooltip title="Forward Document">
+                                            {/* 📊 Status */}
+                                            <TableCell>
+                                                <Tooltip
+                                                    title={
+                                                        getDisplayStatus(doc) === 'rejected'
+                                                            ? doc.cancel_note
+                                                                ? `Reason: ${doc.cancel_note}`
+                                                                : 'Rejected — no reason provided.'
+                                                            : ''
+                                                    }
+                                                    arrow
+                                                >
+                                                    <Chip
+                                                        label={getDisplayStatus(doc)}
+                                                        color={getStatusColor(getDisplayStatus(doc))}
+                                                        size="small"
+                                                        sx={{
+                                                            textTransform: 'capitalize',
+                                                            cursor: getDisplayStatus(doc) === 'rejected' ? 'pointer' : 'default'
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </TableCell>
+
+
+                                            {/* 👤 Created By */}
+                                            <TableCell>
+                                                <Typography variant="body2">
+                                                    {doc.uploaded_by_name || 'Unknown'}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {new Date(doc.uploaded_at).toLocaleDateString()}{" "}
+                                                    {new Date(doc.uploaded_at).toLocaleTimeString()}
+                                                </Typography>
+                                            </TableCell>
+
+                                            {/* ⚙️ Actions */}
+                                            <TableCell>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    {/* Cancel */}
+                                                    {canCancelDocument(doc) && (
+                                                        <Tooltip title="Cancel Document">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleCancelDocument(doc)}
+                                                                color="error"
+                                                            >
+                                                                <CancelIcon />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    )}
+
+                                                    {/* Forward */}
+                                                    {canForwardDocument(doc) && (
+                                                        <Tooltip title="Forward Document">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleForwardDocument(doc)}
+                                                                color="secondary"
+                                                            >
+                                                                <ForwardIcon />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    )}
+
+                                                    {/* More actions */}
+                                                    <Tooltip title="Document Actions">
                                                         <IconButton
                                                             size="small"
-                                                            onClick={() => handleForwardDocument(doc)}
-                                                            color="secondary"
+                                                            onClick={(e) => handleActionMenuOpen(e, doc)}
                                                         >
-                                                            <ForwardIcon />
+                                                            <MoreVertIcon />
                                                         </IconButton>
                                                     </Tooltip>
-                                                )}
-
-                                                {/* More actions */}
-                                                <Tooltip title="Document Actions">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(e) => handleActionMenuOpen(e, doc)}
-                                                    >
-                                                        <MoreVertIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                            </TableBody>
+                            {documents.filter((doc) => {
+                                const term = searchTerm.toLowerCase();
+                                return (
+                                    doc.title?.toLowerCase().includes(term) ||
+                                    doc.department_name?.toLowerCase().includes(term) ||
+                                    doc.current_department_name?.toLowerCase().includes(term) ||
+                                    doc.uploaded_by_name?.toLowerCase().includes(term)
+                                );
+                            }).length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={7} align="center">
+                                            <Typography variant="body2" color="text.secondary">
+                                                No matching documents found.
+                                            </Typography>
                                         </TableCell>
                                     </TableRow>
-                                ))}
-                            </TableBody>
+                                )}
+
                         </Table>
                     </TableContainer>
                 </CardContent>
@@ -1476,41 +1486,21 @@ const Documents = () => {
                                 overflow: "hidden",
                             }}
                         >
-                            {/* ✅ Fixed small barcode (always top-right) */}
-                            <Box
-                                className="barcode-fixed"
-                                sx={{
-                                    position: "absolute",
-                                    top: 12,
-                                    right: 12,
-                                    zIndex: 20,
-                                    bgcolor: "white",
-                                    p: 0.5,
-                                    borderRadius: 1,
-                                    boxShadow: 2,
-                                    width: "140px", // smaller size for print
-                                    height: "auto",
-                                }}
-                            >
-                                <BarcodeGenerator
-                                    barcode={previewDocument.barcode}
-                                    title={previewDocument.title}
-                                />
-                            </Box>
 
                             {/* ✅ File preview frame */}
                             {previewDocument.file_path ? (
-                                <iframe
-                                    src={`${API_BASE_URL}/documents/view.php?id=${previewDocument.id}&token=${localStorage.getItem('token')}`}
+                                <Box
+                                    component="iframe"
+                                    src={`${API_BASE_URL}/documents/view.php?id=${previewDocument.id}`}
                                     width="100%"
-                                    height="800px"
-                                    style={{
-                                        border: "1px solid #ccc",
-                                        borderRadius: "8px",
-                                        backgroundColor: "#fff",
+                                    height="600px"
+                                    sx={{
+                                        border: '1px solid #ccc',
+                                        borderRadius: 1,
                                     }}
-                                    title="Document Preview"
                                 />
+
+
 
                             ) : (
                                 <Typography
