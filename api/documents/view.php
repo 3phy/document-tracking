@@ -1,4 +1,5 @@
 <?php
+require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../../vendor/autoload.php';
 
@@ -8,140 +9,142 @@ use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter;
 use Dompdf\Dompdf;
 
-$id = intval($_GET['id'] ?? 0);
+/* ======================================================
+   FETCH DOCUMENT
+====================================================== */
+$id = (int)($_GET['id'] ?? 0);
+if (!$id) {
+    http_response_code(400);
+    exit('Invalid document ID');
+}
+
 $db = (new Database())->getConnection();
 
-// ✅ Fetch document info
 $stmt = $db->prepare("SELECT * FROM documents WHERE id = :id");
-$stmt->bindParam(':id', $id);
+$stmt->bindParam(':id', $id, PDO::PARAM_INT);
 $stmt->execute();
 $doc = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$doc) {
     http_response_code(404);
-    exit("Document not found.");
+    exit('Document not found');
 }
 
+/* ======================================================
+   RESOLVE FILE PATH
+====================================================== */
 $barcodeValue = $doc['barcode'];
-$relativePath = str_replace(['../', './', '\\'], '', $doc['file_path']);
-$sourceFile = realpath(__DIR__ . '/../../' . $relativePath);
+$uploadsRoot = realpath(__DIR__ . '/../../uploads');
 
-if (!$sourceFile || !file_exists($sourceFile)) {
-    http_response_code(404);
-    exit("File not found on server.");
+$possiblePaths = [
+    $uploadsRoot . '/' . ltrim($doc['file_path'], '/'),
+    $uploadsRoot . '/' . basename($doc['file_path']),
+    realpath(__DIR__ . '/../../' . ltrim($doc['file_path'], '/'))
+];
+
+$sourceFile = null;
+foreach ($possiblePaths as $path) {
+    if ($path && file_exists($path)) {
+        $sourceFile = $path;
+        break;
+    }
 }
 
-// ✅ Prepare converted folder
+if (!$sourceFile) {
+    http_response_code(404);
+    exit('File not found on server');
+}
+
+
+if (!$uploadsRoot || !file_exists($sourceFile)) {
+    http_response_code(404);
+    exit('File not found on server');
+}
+
+/* ======================================================
+   PREPARE CONVERTED PDF
+====================================================== */
 $convertedDir = __DIR__ . '/../../uploads/converted/';
-if (!file_exists($convertedDir)) mkdir($convertedDir, 0777, true);
+if (!is_dir($convertedDir)) {
+    mkdir($convertedDir, 0777, true);
+}
 $convertedPDF = $convertedDir . $barcodeValue . '.pdf';
 
-// ✅ Convert file to PDF if necessary
+/* ======================================================
+   CONVERT FILE TO PDF IF NEEDED
+====================================================== */
 $ext = strtolower(pathinfo($sourceFile, PATHINFO_EXTENSION));
+
 if (!file_exists($convertedPDF)) {
     if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
         $pdf = new Fpdi();
         $pdf->AddPage();
         $pdf->Image($sourceFile, 10, 10, 190);
         $pdf->Output($convertedPDF, 'F');
+
     } elseif (in_array($ext, ['doc', 'docx'])) {
-        $cmd = "soffice --headless --convert-to pdf --outdir " . escapeshellarg($convertedDir) . " " . escapeshellarg($sourceFile);
-        exec($cmd);
+        exec(
+            'soffice --headless --convert-to pdf --outdir '
+            . escapeshellarg($convertedDir) . ' '
+            . escapeshellarg($sourceFile)
+        );
+
     } elseif ($ext === 'txt') {
-        $text = nl2br(htmlspecialchars(file_get_contents($sourceFile)));
-        $html = "<pre style='font-family: DejaVu Sans, monospace;'>$text</pre>";
         $dompdf = new Dompdf();
-        $dompdf->loadHtml($html);
+        $dompdf->loadHtml('<pre>' . htmlspecialchars(file_get_contents($sourceFile)) . '</pre>');
         $dompdf->setPaper('A4');
         $dompdf->render();
         file_put_contents($convertedPDF, $dompdf->output());
+
     } elseif ($ext === 'pdf') {
         copy($sourceFile, $convertedPDF);
+
     } else {
-        exit("Unsupported file type for preview.");
+        exit('Unsupported file type');
     }
 }
 
 if (!file_exists($convertedPDF) || filesize($convertedPDF) === 0) {
-    exit("Conversion failed or invalid PDF generated.");
+    exit('PDF generation failed');
 }
 
-// ✅ Generate barcode
-$generator = new BarcodeGeneratorPNG();
-$barcodeImg = $generator->getBarcode($barcodeValue, $generator::TYPE_CODE_128);
-$barcodeTmp = sys_get_temp_dir() . '/' . $barcodeValue . '_barcode.png';
+/* ======================================================
+   BARCODE + QR
+====================================================== */
+$barcodeImg = (new BarcodeGeneratorPNG())
+    ->getBarcode($barcodeValue, BarcodeGeneratorPNG::TYPE_CODE_128);
+$barcodeTmp = sys_get_temp_dir() . "/{$barcodeValue}_barcode.png";
 file_put_contents($barcodeTmp, $barcodeImg);
 
-// ✅ Generate QR Code (link to this document)
-$qrCode = QrCode::create('http://localhost/document-tracking/view.php?id=' . $id)
-    ->setSize(80);
-$writer = new PngWriter();
-$qrResult = $writer->write($qrCode);
-$qrTmp = sys_get_temp_dir() . '/' . $barcodeValue . '_qr.png';
-$qrResult->saveToFile($qrTmp);
+$qrTmp = sys_get_temp_dir() . "/{$barcodeValue}_qr.png";
+(new PngWriter())->write(
+    QrCode::create("Document ID: $id")->setSize(80)
+)->saveToFile($qrTmp);
 
-// ✅ Merge Barcode + QR (only on first page)
+/* ======================================================
+   MERGE INTO FINAL PDF
+====================================================== */
 $pdf = new Fpdi();
-try {
-    $pageCount = $pdf->setSourceFile($convertedPDF);
-} catch (Exception $e) {
-    $pdf->AddPage('P', 'A4');
-    $pageCount = 1;
-}
+$pageCount = $pdf->setSourceFile($convertedPDF);
 
-for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
-    try {
-        $tpl = $pdf->importPage($pageNo);
-        $size = $pdf->getTemplateSize($tpl);
-        $orientation = $size['width'] > $size['height'] ? 'L' : 'P';
-        $pdf->AddPage($orientation, [$size['width'], $size['height']]);
-        $pdf->useTemplate($tpl, 0, 0, $size['width'], $size['height']);
-    } catch (Exception $e) {
-        $pdf->AddPage('P', 'A4');
+for ($i = 1; $i <= $pageCount; $i++) {
+    $tpl = $pdf->importPage($i);
+    $size = $pdf->getTemplateSize($tpl);
+    $pdf->AddPage();
+    $pdf->useTemplate($tpl);
+
+    if ($i === 1) {
+        $pdf->Image($barcodeTmp, 150, 270, 40, 10);
+        $pdf->Image($qrTmp, 190, 270, 15, 15);
     }
-
-    // ✅ Add Barcode + QR only on FIRST PAGE
-if ($pageNo === 1) {
-    // --- A4 page geometry (mm) ---
-    $pageWidth  = $pdf->GetPageWidth();   // ~210
-    $pageHeight = $pdf->GetPageHeight();  // ~297
-
-    // --- Margins + sizes ---
-    $marginRight  = 10;
-    $marginBottom = 10;
-    $qrSize        = 18;
-    $barcodeWidth  = 26;
-    $barcodeHeight = 8;
-    $spacing       = 2;
-
-    // --- Position side-by-side at bottom-right ---
-    $qrX = $pageWidth - $qrSize - $marginRight;
-    $qrY = $pageHeight - $qrSize - $marginBottom;
-    $barcodeX = $qrX - $barcodeWidth - $spacing;
-    $barcodeY = $qrY + ($qrSize - $barcodeHeight) / 2;
-
-    // --- White background to prevent overlap ---
-    $pdf->SetFillColor(255, 255, 255);
-    $pdf->Rect(
-        $barcodeX - 2,
-        $qrY - 2,
-        $barcodeWidth + $qrSize + $spacing + 4,
-        $qrSize + 4,
-        'F'
-    );
-
-    // --- Barcode ---
-    $pdf->Image($barcodeTmp, $barcodeX, $barcodeY, $barcodeWidth, $barcodeHeight);
-
-    // --- QR ---
-    $pdf->Image($qrTmp, $qrX, $qrY, $qrSize, $qrSize);
 }
 
+/* ======================================================
+   OUTPUT INLINE
+====================================================== */
+if (ob_get_length()) ob_end_clean();
 
-
-}
-
-// ✅ Output as inline PDF
 header('Content-Type: application/pdf');
-$pdf->Output('I', $barcodeValue . '_preview.pdf');
-?>
+header('Content-Disposition: inline; filename="preview.pdf"');
+$pdf->Output('I');
+exit;

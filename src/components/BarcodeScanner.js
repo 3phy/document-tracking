@@ -19,10 +19,16 @@ const BarcodeScanner = ({ open, onClose, onScan, title = "Scan Document Barcode"
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
   const html5QrCode = useRef(null);
+  const scanProcessedRef = useRef(false); // Track if a scan has been processed
+  const lastScannedCodeRef = useRef(''); // Track last scanned code to prevent duplicates
 
   // Initialize and cleanup camera
   useEffect(() => {
     if (scanMode === 'camera' && open) {
+      // Reset scan flags when starting
+      scanProcessedRef.current = false;
+      lastScannedCodeRef.current = '';
+
       const startScanner = async () => {
         try {
           setError('');
@@ -37,14 +43,40 @@ const BarcodeScanner = ({ open, onClose, onScan, title = "Scan Document Barcode"
 
           await html5QrCode.current.start(
             { facingMode: 'environment' },
-            { fps: 10, qrbox: { width: 250, height: 250 } },
+            { 
+              fps: 10, 
+              qrbox: { width: 250, height: 250 },
+              disableFlip: false,
+              rememberLastUsedCamera: true
+            },
             (decodedText) => {
-              stopScanner();
-              onScan(decodedText);
+              // Prevent multiple scans of the same code
+              if (scanProcessedRef.current) {
+                return; // Already processed a scan
+              }
+
+              // Prevent duplicate scans within 2 seconds
+              const now = Date.now();
+              if (decodedText === lastScannedCodeRef.current) {
+                return; // Same code, ignore
+              }
+
+              // Mark as processed and stop scanner immediately
+              scanProcessedRef.current = true;
+              lastScannedCodeRef.current = decodedText;
+              
+              // Stop scanner first, then call onScan
+              stopScanner().then(() => {
+                onScan(decodedText);
+              });
             },
             (scanError) => {
-              // Ignore read errors, only log to console
-              console.log('Scan error:', scanError);
+              // Suppress verbose error logging - only log actual errors, not "not found" messages
+              // The library continuously tries to scan, so we ignore most errors
+              if (scanError && !scanError.message?.includes('NotFoundException')) {
+                // Only log non-expected errors
+                console.warn('Scan error:', scanError);
+              }
             }
           );
         } catch (err) {
@@ -58,16 +90,26 @@ const BarcodeScanner = ({ open, onClose, onScan, title = "Scan Document Barcode"
     }
 
     // Cleanup on close or mode change
-    return () => stopScanner();
+    return () => {
+      scanProcessedRef.current = false;
+      lastScannedCodeRef.current = '';
+      stopScanner();
+    };
   }, [scanMode, open]);
 
   const stopScanner = async () => {
-    if (html5QrCode.current && scanning) {
+    if (html5QrCode.current) {
       try {
-        await html5QrCode.current.stop();
+        // Check if scanner is still running before stopping
+        if (scanning) {
+          await html5QrCode.current.stop();
+        }
         await html5QrCode.current.clear();
       } catch (err) {
-        console.warn('Stop scanner warning:', err.message);
+        // Ignore errors when stopping (scanner might already be stopped)
+        if (!err.message?.includes('already stopped')) {
+          console.warn('Stop scanner warning:', err.message);
+        }
       } finally {
         html5QrCode.current = null;
         setScanning(false);
@@ -85,6 +127,8 @@ const BarcodeScanner = ({ open, onClose, onScan, title = "Scan Document Barcode"
   };
 
   const handleClose = () => {
+    scanProcessedRef.current = false;
+    lastScannedCodeRef.current = '';
     stopScanner();
     setError('');
     setManualInput('');

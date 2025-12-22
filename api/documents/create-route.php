@@ -1,44 +1,25 @@
 <?php
 require_once '../config/cors.php';
 require_once '../config/database.php';
-require_once '../config/jwt.php';
+require_once '../config/auth.php';
+require_once '../config/response.php';
 
 $database = new Database();
 $db = $database->getConnection();
-$jwt = new JWT();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit();
+    Response::methodNotAllowed();
 }
 
-// Verify token
-$headers = getallheaders();
-$auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-
-if (empty($auth_header) || !preg_match('/Bearer\s(\S+)/', $auth_header, $matches)) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'No token provided']);
-    exit();
-}
-
-$token = $matches[1];
-$payload = $jwt->decode($token);
-
-if (!$payload || $payload['exp'] < time()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Invalid or expired token']);
-    exit();
-}
+// Verify token and require admin
+$payload = Auth::requireAuth();
+Auth::requireAdmin($payload);
 
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
 
 if (!$input || !isset($input['from_department_id']) || !isset($input['to_department_id'])) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'From and to department IDs are required']);
-    exit();
+    Response::error('From and to department IDs are required', 400);
 }
 
 $from_department_id = $input['from_department_id'];
@@ -50,9 +31,7 @@ try {
     $routing_table_exists = $table_check->rowCount() > 0;
     
     if (!$routing_table_exists) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'Routing system not initialized. Please run migration script.']);
-        exit();
+        Response::error('Routing system not initialized. Please run migration script.', 400);
     }
     
     // Check if departments exist
@@ -62,9 +41,12 @@ try {
     $departments = $dept_stmt->fetchAll(PDO::FETCH_ASSOC);
     
     if (count($departments) !== 2) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'One or both departments not found']);
-        exit();
+        Response::error('One or both departments not found or inactive', 400);
+    }
+    
+    // Prevent routing from a department to itself
+    if ($from_department_id == $to_department_id) {
+        Response::error('Cannot create routing from a department to itself', 400);
     }
     
     // Check if routing already exists
@@ -74,9 +56,7 @@ try {
     $existing = $existing_stmt->fetch();
     
     if ($existing) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'Routing already exists for this path']);
-        exit();
+        Response::error('Routing already exists for this path', 400);
     }
     
     // Find intermediate department using routing preferences
@@ -134,9 +114,7 @@ try {
         }
         $routing_path[] = $to_dept_name;
         
-        echo json_encode([
-            'success' => true,
-            'message' => 'Routing created successfully',
+        Response::success([
             'routing' => [
                 'from_department_id' => $from_department_id,
                 'to_department_id' => $to_department_id,
@@ -144,14 +122,12 @@ try {
                 'routing_path' => $routing_path,
                 'path_string' => implode(' → ', $routing_path)
             ]
-        ]);
+        ], 'Routing created successfully');
     } else {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Failed to create routing']);
+        Response::error('Failed to create routing', 500);
     }
     
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    Response::serverError('Failed to create routing', $e);
 }
 ?>

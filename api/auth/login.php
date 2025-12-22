@@ -2,27 +2,29 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../config/response.php';
 
 $database = new Database();
 $db = $database->getConnection();
 $jwt = new JWT();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit();
+    Response::methodNotAllowed();
 }
 
 $data = json_decode(file_get_contents("php://input"), true);
 
 if (!isset($data['email']) || !isset($data['password'])) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Email and password are required']);
-    exit();
+    Response::error('Email and password are required', 400);
 }
 
-$email = $data['email'];
+$email = trim($data['email']);
 $password = $data['password'];
+
+// Basic email validation
+if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    Response::error('Invalid email format', 400);
+}
 
 try {
     $query = "SELECT id, name, email, password, role, is_active FROM users WHERE email = :email";
@@ -34,9 +36,7 @@ try {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user['is_active']) {
-            http_response_code(401);
-            echo json_encode(['success' => false, 'message' => 'Account is deactivated']);
-            exit();
+            Response::error('Account is deactivated', 401);
         }
         
         if (password_verify($password, $user['password'])) {
@@ -51,22 +51,17 @@ try {
             
             $token = $jwt->encode($payload);
             
-            echo json_encode([
-                'success' => true,
-                'message' => 'Login successful',
+            Response::success([
                 'token' => $token,
                 'user' => $user
-            ]);
+            ], 'Login successful');
         } else {
-            http_response_code(401);
-            echo json_encode(['success' => false, 'message' => 'Invalid credentials']);
+            Response::error('Invalid credentials', 401);
         }
     } else {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Invalid credentials']);
+        Response::error('Invalid credentials', 401);
     }
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error']);
+    Response::serverError('Login failed', $e);
 }
 ?>

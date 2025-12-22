@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Visibility as VisibilityIcon, Print as PrintIcon } from '@mui/icons-material';
-import { Rnd } from 'react-rnd';
-
 
 import {
     Box,
@@ -9,14 +7,12 @@ import {
     Button,
     Card,
     CardContent,
-    Grid,
     Table,
     TableBody,
     TableCell,
     TableContainer,
     TableHead,
     TableRow,
-    Paper,
     Chip,
     IconButton,
     Dialog,
@@ -26,7 +22,6 @@ import {
     TextField,
     Alert,
     CircularProgress,
-    Fab,
     Tooltip,
     InputAdornment,
     LinearProgress,
@@ -42,7 +37,6 @@ import {
     Download as DownloadIcon,
     Visibility as ViewIcon,
     QrCode as QrCodeIcon,
-    Send as SendIcon,
     Route as RouteIcon,
     Forward as ForwardIcon,
     Search as SearchIcon,
@@ -90,15 +84,13 @@ const Documents = () => {
     const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
     const [previewDocument, setPreviewDocument] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [availableDepartmentsForForward, setAvailableDepartmentsForForward] = useState([]);
 
 
     useEffect(() => {
         fetchDocuments();
         fetchDepartments();
         fetchRoutingInfo();
-
-        // Debug: Log user data
-        console.log('User data:', user);
     }, [user]);
 
     useEffect(() => {
@@ -108,19 +100,15 @@ const Documents = () => {
     const fetchDocuments = async () => {
         try {
             const token = localStorage.getItem('token');
-            console.log("Fetching documents...");
             const response = await axios.get(`${API_BASE_URL}/documents/list.php`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            console.log("Response:", response.data);
             if (response.data.success) {
-                console.log("Documents loaded:", response.data.documents);
                 setDocuments(response.data.documents);
             } else {
                 setError('Failed to load documents');
             }
         } catch (error) {
-            console.error('Documents error:', error);
             setError('Failed to load documents');
         } finally {
             setLoading(false);
@@ -138,7 +126,7 @@ const Documents = () => {
                 setDepartments(response.data.departments);
             }
         } catch (error) {
-            console.error('Departments error:', error);
+            // Silently fail - departments not critical
         }
     };
 
@@ -151,13 +139,8 @@ const Documents = () => {
 
             if (response.data.success) {
                 setRoutingInfo(response.data.routing_info || []);
-                // Show warning if user has no department
-                if (response.data.message && response.data.message.includes('no department assigned')) {
-                    console.warn('Routing info:', response.data.message);
-                }
             }
         } catch (error) {
-            console.error('Routing info error:', error);
             // Set empty routing info on error
             setRoutingInfo([]);
         }
@@ -202,7 +185,11 @@ const Documents = () => {
             }
         } catch (error) {
             console.error('Upload error:', error);
-            setError('Upload failed. Please try again.');
+            if (error.response?.data?.message) {
+                setError(error.response.data.message || 'Upload failed. Please try again.');
+            } else {
+                setError('Upload failed. Please try again.');
+            }
         }
     };
 
@@ -235,7 +222,6 @@ const Documents = () => {
 
             // ✅ Determine file name
             const fileName =
-                document.file_name ||
                 document.filename ||
                 `${document.title || 'document'}.pdf`;
 
@@ -253,7 +239,21 @@ const Documents = () => {
             setTimeout(() => setSuccessMessage(''), 3000);
         } catch (error) {
             console.error('Download error:', error);
-            setError('Download failed. Please try again.');
+            if (error.response?.data) {
+                // Try to read error message from blob
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const data = JSON.parse(reader.result);
+                        setError(data.message || 'Download failed.');
+                    } catch {
+                        setError('Download failed. Please try again.');
+                    }
+                };
+                reader.readAsText(error.response.data);
+            } else {
+                setError('Download failed. Please try again.');
+            }
         }
     };
 
@@ -264,16 +264,18 @@ const Documents = () => {
 
     const handlePrintDocument = () => {
         if (!previewDocument?.id) return;
-
+      
         const pdfUrl = `${API_BASE_URL}/documents/view.php?id=${previewDocument.id}`;
         const printWindow = window.open(pdfUrl, '_blank');
-
-        // Wait for PDF to load before triggering print
-        printWindow.onload = () => {
+      
+        if (printWindow) {
+          printWindow.onload = () => {
             printWindow.focus();
             printWindow.print();
-        };
-    };
+          };
+        }
+      };
+      
 
 
 
@@ -284,9 +286,14 @@ const Documents = () => {
         try {
             const token = localStorage.getItem('token');
 
+            if (!barcode || !barcode.trim()) {
+                setError('Invalid barcode. Please scan again.');
+                return;
+            }
+
             // Try to receive the document via QR code scan
             const response = await axios.post(`${API_BASE_URL}/documents/receive.php`, {
-                barcode: barcode
+                barcode: barcode.trim()
             }, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -298,7 +305,7 @@ const Documents = () => {
                 setScannerDialogOpen(false);
                 fetchDocuments();
                 setError('');
-                setSuccessMessage('Document received successfully!');
+                setSuccessMessage(response.data.message || 'Document received successfully!');
                 // Clear success message after 3 seconds
                 setTimeout(() => setSuccessMessage(''), 3000);
             } else {
@@ -308,19 +315,39 @@ const Documents = () => {
             console.error('Scan error:', error);
             if (error.response?.data?.message) {
                 setError(error.response.data.message);
+            } else if (error.response?.status === 403) {
+                setError('Document is not pending in your department. Make sure the document is forwarded to your department first.');
+            } else if (error.response?.status === 404) {
+                setError('Document not found. Please check the barcode and try again.');
             } else {
-                setError('Document not found or not available for receiving. Make sure the document is pending in your department.');
+                setError('Failed to receive document. Please try again.');
             }
         }
     };
 
 
 
-    const handleForwardDocument = (document) => {
+    const handleForwardDocument = async (document) => {
         setSelectedDocumentForForward(document);
         setForwardSearchTerm('');
         setForwardingStatus('');
         setForwardDialogOpen(true);
+
+        // Fetch available departments for this document
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`${API_BASE_URL}/documents/available-departments.php?document_id=${document.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.data.success) {
+                // Store available departments for this document
+                setAvailableDepartmentsForForward(response.data.departments || []);
+            }
+        } catch (error) {
+            console.error('Error fetching available departments:', error);
+            setAvailableDepartmentsForForward([]);
+        }
     };
 
     const handleForwardToDepartment = async (toDepartmentId) => {
@@ -357,7 +384,6 @@ const Documents = () => {
                 setError(response.data.message || 'Failed to forward document');
             }
         } catch (error) {
-            console.error('Forward document error:', error);
             setForwardingStatus('error');
             if (error.response?.data?.message) {
                 setError(error.response.data.message);
@@ -380,7 +406,6 @@ const Documents = () => {
             return;
         }
 
-        console.log('Attempting to cancel document:', selectedDocumentForCancel);
         setCancellingStatus('cancelling');
 
         try {
@@ -394,8 +419,6 @@ const Documents = () => {
                     'Content-Type': 'application/json'
                 }
             });
-
-            console.log('Cancel response:', response.data);
 
             if (response.data.success) {
                 setCancellingStatus('success');
@@ -415,7 +438,6 @@ const Documents = () => {
                 setError(response.data.message || 'Failed to cancel document');
             }
         } catch (error) {
-            console.error('Cancel document error:', error);
             setCancellingStatus('error');
             if (error.response?.data?.message) {
                 setError(error.response.data.message);
@@ -480,42 +502,16 @@ const Documents = () => {
 
             if (response.data.success) {
                 setDynamicRoutingData(response.data);
-            } else {
-                console.error('Failed to fetch routing history:', response.data.message);
             }
         } catch (error) {
-            console.error('Error fetching routing history:', error);
+            // Silently fail - routing history not critical
         }
     };
 
-    const getAvailableDepartmentsForForward = (document) => {
-        if (!document || !routingInfo.length) return departments;
+    const getFilteredDepartments = () => {
+        if (!forwardSearchTerm) return availableDepartmentsForForward;
 
-        // Get routing path record for destination department
-        const routing = routingInfo.find(r => r.to_department_id == document.department_id);
-        if (!routing || !routing.routing_path?.length) return departments;
-
-        // Determine the next department in the path after the current department
-        const path = routing.routing_path; // array of department names
-        const currentDeptName = document.current_department_name || document.department_name;
-        const currentIndex = path.findIndex(name => name === currentDeptName);
-
-        // If current not found, allow only the first in path
-        const nextDeptName = currentIndex >= 0 ? path[currentIndex + 1] : path[0];
-        if (!nextDeptName) {
-            return [];
-        }
-
-        // Map name to id
-        const nextDept = departments.find(d => d.name === nextDeptName);
-        return nextDept ? [nextDept] : [];
-    };
-
-    const getFilteredDepartments = (document) => {
-        const availableDepts = getAvailableDepartmentsForForward(document);
-        if (!forwardSearchTerm) return availableDepts;
-
-        return availableDepts.filter(dept =>
+        return availableDepartmentsForForward.filter(dept =>
             dept.name.toLowerCase().includes(forwardSearchTerm.toLowerCase())
         );
     };
@@ -545,86 +541,59 @@ const Documents = () => {
     };
 
     const canForwardDocument = (document) => {
-        // Debug logging
-        console.log('Checking if document can be forwarded:', {
-            documentId: document.id,
-            documentStatus: document.status,
-            documentCurrentDept: document.current_department_id,
-            documentDept: document.department_id,
-            userDept: user?.department_id,
-            uploadedBy: document.uploaded_by,
-            userId: user?.id
-        });
-
-        // Can forward: only if the status is 'received' and not cancelled/rejected
-        if (document.status !== 'received' || getDisplayStatus(document) === 'rejected') {
-            console.log('Cannot forward: status is not received');
-            return false;
-        }
-
-        // Check if user is not the sender (cannot forward own documents)
-        if (document.uploaded_by === user?.id) {
-            console.log('Cannot forward: user is the sender');
-            return false;
-        }
-
-        // Additional check: make sure user has a department
+        // ❌ Must have a valid department
         if (!user?.department_id) {
-            console.log('Cannot forward: user has no department');
             return false;
         }
 
-        // Check if document is in user's department (either current_department_id or department_id)
-        const isInUserDept = document.current_department_id === user?.department_id ||
-            document.department_id === user?.department_id;
+        // ✅ Only the CURRENT holder department can forward
+        const isInUserDept = document.current_department_id === user.department_id;
 
         if (!isInUserDept) {
-            console.log('Cannot forward: document not in user department');
             return false;
         }
 
-        console.log('Document can be forwarded!');
-        // After receiving, can forward to any department (but only once)
+        // ✅ Only forward if it's already received
+        const status = getDisplayStatus(document);
+        if (status !== 'received') {
+            return false;
+        }
+
+        // ✅ Prevent sender from forwarding their own document
+        if (document.uploaded_by === user?.id) {
+            return false;
+        }
+
         return true;
     };
 
-    const canCancelDocument = (document) => {
-        // Debug logging
-        console.log('Checking if document can be cancelled:', {
-            documentId: document.id,
-            documentStatus: document.status,
-            documentCurrentDept: document.current_department_id,
-            documentDept: document.department_id,
-            userDept: user?.department_id,
-            uploadedBy: document.uploaded_by,
-            userId: user?.id
-        });
 
+    const canCancelDocument = (document) => {
         // Check if user is not the sender
         if (document.uploaded_by === user?.id) {
-            console.log('Cannot cancel: user is the sender');
             return false;
         }
 
         // Check if user has a department
         if (!user?.department_id) {
-            console.log('Cannot cancel: user has no department');
-            return false;
-        }
-
-        // Check if document is in user's department (either current_department_id or department_id)
-        const isInUserDept = document.current_department_id === user?.department_id ||
-            document.department_id === user?.department_id;
-
-        if (!isInUserDept) {
-            console.log('Cannot cancel: document not in user department');
             return false;
         }
 
         // Check if document is in a cancellable state
-        const canCancel = document.status === 'pending' || document.status === 'outgoing' || document.status === 'received';
-        console.log('Can cancel result:', canCancel);
-        return canCancel;
+        const status = (document.status || '').toLowerCase();
+        if (!['pending', 'outgoing', 'received'].includes(status)) {
+            return false;
+        }
+
+        // When document is forwarded (outgoing), only the receiving department can cancel
+        // The forwarding department loses the right to cancel
+        if (status === 'outgoing') {
+            // Only receiving department (department_id) can cancel
+            return document.department_id === user?.department_id;
+        } else {
+            // For pending/received, current holder department can cancel
+            return document.current_department_id === user?.department_id;
+        }
     };
 
 
@@ -635,6 +604,8 @@ const Documents = () => {
             case 'pending': return 'warning';
             case 'received': return 'success';
             case 'rejected': return 'error';
+            case 'cancelled': return 'error';
+            case 'canceled': return 'error';
             default: return 'default';
         }
     };
@@ -644,10 +615,26 @@ const Documents = () => {
 
     const getDisplayStatus = (doc) => {
         const raw = (doc.display_status || doc.status || '').toLowerCase();
-        if (['cancelled', 'canceled'].includes(raw)) return 'rejected';
+        // Map backend 'rejected' status to 'cancelled' for display
+        if (raw === 'rejected' || ['cancelled', 'canceled'].includes(raw)) return 'cancelled';
         return raw;
     };
 
+    // ✅ Adjust displayed status based on user's department and backend field naming
+    const getAdjustedStatus = (doc) => {
+        const raw = (doc.status || '').toLowerCase();
+
+        // Identify the receiving department ID — your backend may use department_id or receiving_department_id
+        const receivingDeptId = doc.receiving_department_id || doc.department_id;
+
+        // If outgoing and the current user belongs to the receiving department, show as pending
+        if (raw === 'outgoing' && user?.department_id && user.department_id == receivingDeptId) {
+            return 'pending';
+        }
+
+        // Otherwise, return the normal display status
+        return getDisplayStatus(doc);
+    };
 
 
     const formatDate = (dateString) => {
@@ -814,25 +801,27 @@ const Documents = () => {
                                             <TableCell>
                                                 <Tooltip
                                                     title={
-                                                        getDisplayStatus(doc) === 'rejected'
+                                                        getAdjustedStatus(doc) === 'cancelled'
                                                             ? doc.cancel_note
                                                                 ? `Reason: ${doc.cancel_note}`
-                                                                : 'Rejected — no reason provided.'
+                                                                : 'Cancelled — no reason provided.'
                                                             : ''
                                                     }
                                                     arrow
                                                 >
                                                     <Chip
-                                                        label={getDisplayStatus(doc)}
-                                                        color={getStatusColor(getDisplayStatus(doc))}
+                                                        label={getAdjustedStatus(doc)}
+                                                        color={getStatusColor(getAdjustedStatus(doc))}
                                                         size="small"
                                                         sx={{
                                                             textTransform: 'capitalize',
-                                                            cursor: getDisplayStatus(doc) === 'rejected' ? 'pointer' : 'default'
+                                                            cursor: getAdjustedStatus(doc) === 'cancelled' ? 'pointer' : 'default',
                                                         }}
                                                     />
                                                 </Tooltip>
                                             </TableCell>
+
+
 
 
                                             {/* 👤 Created By */}
@@ -1084,17 +1073,28 @@ const Documents = () => {
                                             const isFirst = index === 0;
                                             const isLast = index === dynamicRoutingData.routing_details.length - 1;
 
-                                            const stepStatus =
-                                                isFirst && getDisplayStatus(selectedDocumentForRouting) === 'rejected'
-                                                    ? 'rejected'
-                                                    : isFirst
-                                                        ? null
-                                                        : isLast
-                                                            ? getDisplayStatus(selectedDocumentForRouting)
-                                                            : 'pending';
+                                            // Determine status: only show if actually received or if it's the last step
+                                            const displayStatus = getDisplayStatus(selectedDocumentForRouting);
+                                            const isDocumentCancelled = displayStatus === 'cancelled';
+                                            
+                                            let stepStatus = null;
+                                            if (isFirst) {
+                                                // Source department shows cancelled if document is cancelled
+                                                stepStatus = isDocumentCancelled ? 'cancelled' : null;
+                                            } else {
+                                                if (step.was_received || step.action === 'received') {
+                                                    // If received, show received status (or cancelled if document is cancelled and it's the last step)
+                                                    stepStatus = isDocumentCancelled && isLast ? 'cancelled' : 'received';
+                                                } else {
+                                                    // If not received yet, show cancelled if document is cancelled, otherwise pending
+                                                    stepStatus = isDocumentCancelled ? 'cancelled' : 'pending';
+                                                }
+                                            }
 
-                                            const isRejectedAtSource =
-                                                isFirst && getDisplayStatus(selectedDocumentForRouting) === 'rejected';
+                                            const isCancelledAtSource =
+                                                isFirst && displayStatus === 'cancelled';
+
+
 
                                             return (
                                                 <Box key={index}>
@@ -1106,7 +1106,7 @@ const Documents = () => {
                                                                 width: 10,
                                                                 height: 10,
                                                                 borderRadius: '50%',
-                                                                bgcolor: isRejectedAtSource
+                                                                bgcolor: isCancelledAtSource
                                                                     ? 'error.main'
                                                                     : isFirst
                                                                         ? 'grey.700'
@@ -1119,36 +1119,41 @@ const Documents = () => {
                                                             <Typography variant="body2" fontWeight="medium">
                                                                 {step.department_name || 'Unknown Department'}{' '}
                                                                 <Typography component="span" variant="body2" color="text.secondary">
-                                                                    ({isFirst ? 'Source' : isLast ? 'Destination' : 'Forwarded'})
+                                                                    ({isFirst ? 'Source' : (step.was_received || step.action === 'received') ? 'Received' : isLast ? 'Destination' : 'Forwarded'})
                                                                 </Typography>
                                                             </Typography>
 
                                                             <Box sx={{ ml: 3, mt: 0.5, borderLeft: '2px dotted #ccc', pl: 2 }}>
                                                                 <Typography variant="caption" color="text.secondary" display="block">
-                                                                    • {isFirst ? 'Created on:' : 'Updated on:'}{' '}
+                                                                    • {isFirst ? 'Created on:' : (step.was_received || step.action === 'received' ? 'Received on:' : 'Forwarded on:')}{' '}
                                                                     {step.timestamp ? formatDate(step.timestamp) : 'Unknown'}
                                                                 </Typography>
 
-                                                                <Typography variant="caption" color="text.secondary" display="block">
-                                                                    • {isFirst ? 'Created by:' : 'Updated by:'}{' '}
-                                                                    <span
-                                                                        style={{
-                                                                            color: isRejectedAtSource
+                                                                {/* Show user name only for created (first step) or received steps, not for pending */}
+                                                                {(isFirst || step.was_received || step.action === 'received') && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        • {isFirst ? 'Created by:' : 'Received by:'}{' '}
+                                                                        <span
+                                                                            style={{
+                                                                            color: isCancelledAtSource
                                                                                 ? 'red'
                                                                                 : isFirst
                                                                                     ? '#1976d2'
                                                                                     : isLast
                                                                                         ? 'green'
                                                                                         : '#0288d1',
-                                                                        }}
-                                                                    >
-                                                                        {step.user_name || 'System User'}
-                                                                    </span>
-                                                                </Typography>
+                                                                            }}
+                                                                        >
+                                                                            {step.user_name || 'System User'}
+                                                                        </span>
+                                                                    </Typography>
+                                                                )}
 
                                                                 {stepStatus && (
-                                                                    <Typography variant="caption" color="text.secondary" display="block">
-                                                                        • Status:{' '}
+                                                                    <Box component="span" sx={{ display: 'block' }}>
+                                                                        <Typography variant="caption" color="text.secondary" component="span">
+                                                                            • Status:{' '}
+                                                                        </Typography>
                                                                         <Chip
                                                                             label={stepStatus.charAt(0).toUpperCase() + stepStatus.slice(1)}
                                                                             color={getStatusColor(stepStatus)}
@@ -1156,13 +1161,14 @@ const Documents = () => {
                                                                             sx={{
                                                                                 textTransform: 'capitalize',
                                                                                 fontSize: '0.7rem',
+                                                                                verticalAlign: 'middle',
                                                                             }}
                                                                         />
-                                                                    </Typography>
+                                                                    </Box>
                                                                 )}
 
-                                                                {/* show rejection note right under source */}
-                                                                {isRejectedAtSource && (
+                                                                {/* show cancellation note right under source */}
+                                                                {isCancelledAtSource && (
                                                                     <Box
                                                                         sx={{
                                                                             mt: 1.5,
@@ -1183,7 +1189,7 @@ const Documents = () => {
                                                                                 fontWeight: 'bold',
                                                                             }}
                                                                         >
-                                                                            ❌ Rejected by: {dynamicRoutingData.document.canceled_by || 'Unknown User'}
+                                                                            ❌ Cancelled by: {dynamicRoutingData.document.canceled_by || 'Unknown User'}
                                                                         </Typography>
 
                                                                         <Typography
@@ -1222,8 +1228,8 @@ const Documents = () => {
                                             );
                                         })}
 
-                                        {/* ✅ Show Rejection Details at the End */}
-                                        {getDisplayStatus(selectedDocumentForRouting) === 'rejected' && (
+                                        {/* ✅ Show Cancellation Details at the End */}
+                                        {getDisplayStatus(selectedDocumentForRouting) === 'cancelled' && (
                                             <>
                                                 <Box
                                                     sx={{
@@ -1254,7 +1260,7 @@ const Documents = () => {
                                                             gap: 1,
                                                         }}
                                                     >
-                                                        ❌ Rejected by{' '}
+                                                        ❌ Cancelled by{' '}
                                                         {selectedDocumentForRouting.canceled_by_name || 'Unknown User'}
                                                     </Typography>
 
@@ -1368,30 +1374,46 @@ const Documents = () => {
                             )}
 
                             {/* Department List */}
-                            <Box sx={{ mt: 2, maxHeight: 400, overflow: 'auto' }}>
-                                {getFilteredDepartments(selectedDocumentForForward).length > 0 ? (
-                                    getFilteredDepartments(selectedDocumentForForward).map((dept) => (
-                                        <Button
-                                            key={dept.id}
-                                            variant="outlined"
-                                            fullWidth
-                                            disabled={forwardingStatus === 'forwarding'}
-                                            sx={{
-                                                mb: 1,
-                                                justifyContent: 'flex-start',
-                                                textTransform: 'none'
-                                            }}
-                                            onClick={() => handleForwardToDepartment(dept.id)}
-                                        >
-                                            {dept.name}
-                                        </Button>
-                                    ))
+                            <Box
+                                sx={{
+                                    mt: 1,
+                                    maxHeight: 280,
+                                    overflowY: 'auto',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 1,
+                                }}
+                            >
+                                {getFilteredDepartments().length > 0 ? (
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>
+                                        {getFilteredDepartments().map((dept) => (
+                                            <Button
+                                                key={dept.id}
+                                                variant="outlined"
+                                                sx={{
+                                                    textTransform: 'none',
+                                                    minWidth: 200
+                                                }}
+                                                onClick={() => handleForwardToDepartment(dept.id)}
+                                            >
+                                                {dept.name}
+                                            </Button>
+                                        ))}
+                                    </Box>
+
                                 ) : (
-                                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                                        {forwardSearchTerm ? 'No departments found matching your search.' : 'No available departments for forwarding.'}
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        sx={{ textAlign: 'center', py: 2 }}
+                                    >
+                                        {forwardSearchTerm
+                                            ? 'No departments found matching your search.'
+                                            : 'No available departments for forwarding.'}
                                     </Typography>
                                 )}
                             </Box>
+
                         </Box>
                     )}
                 </DialogContent>
@@ -1486,30 +1508,18 @@ const Documents = () => {
                                 overflow: "hidden",
                             }}
                         >
-
                             {/* ✅ File preview frame */}
-                            {previewDocument.file_path ? (
-                                <Box
-                                    component="iframe"
-                                    src={`${API_BASE_URL}/documents/view.php?id=${previewDocument.id}`}
-                                    width="100%"
-                                    height="600px"
-                                    sx={{
-                                        border: '1px solid #ccc',
-                                        borderRadius: 1,
-                                    }}
-                                />
+                            <Box
+                                component="iframe"
+                                src={`${API_BASE_URL}/documents/view.php?id=${previewDocument.id}`}
+                                width="100%"
+                                height="600px"
+                                sx={{
+                                    border: '1px solid #ccc',
+                                    borderRadius: 1,
+                                }}
+                            />
 
-
-
-                            ) : (
-                                <Typography
-                                    color="text.secondary"
-                                    sx={{ textAlign: "center", mt: 4 }}
-                                >
-                                    No file available for preview.
-                                </Typography>
-                            )}
                         </Box>
                     ) : (
                         <Typography>Loading document...</Typography>

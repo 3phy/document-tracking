@@ -62,22 +62,27 @@ try {
         exit();
     }
 
-    // ✅ Verify access rights and ownership
+    // ✅ Get document
     $checkQuery = "
         SELECT d.*, u.name AS uploaded_by_name 
         FROM documents d
         LEFT JOIN users u ON d.uploaded_by = u.id
-        WHERE d.id = ? 
-          AND d.uploaded_by != ? 
-          AND (d.current_department_id = ? OR d.department_id = ?)
+        WHERE d.id = ?
     ";
     $checkStmt = $db->prepare($checkQuery);
-    $checkStmt->execute([$document_id, $payload['user_id'], $userDeptId, $userDeptId]);
+    $checkStmt->execute([$document_id]);
     $document = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$document) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'Document not found or you are not authorized to cancel it']);
+        echo json_encode(['success' => false, 'message' => 'Document not found']);
+        exit();
+    }
+
+    // ✅ Cannot cancel own uploaded document
+    if ((int)$document['uploaded_by'] === (int)$payload['user_id']) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You cannot cancel your own document']);
         exit();
     }
 
@@ -85,6 +90,25 @@ try {
     if (!in_array(strtolower($document['status']), ['pending', 'outgoing', 'received'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Document cannot be cancelled in its current state']);
+        exit();
+    }
+
+    // ✅ Check cancellation rights based on document status
+    $canCancel = false;
+    $status = strtolower($document['status']);
+    
+    if ($status === 'outgoing') {
+        // When forwarded (outgoing), only the receiving department (department_id) can cancel
+        // The forwarding department (current_department_id) loses the right to cancel
+        $canCancel = ((int)$document['department_id'] === (int)$userDeptId);
+    } else {
+        // For pending/received, the current holder department can cancel
+        $canCancel = ((int)$document['current_department_id'] === (int)$userDeptId);
+    }
+
+    if (!$canCancel) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'You are not authorized to cancel this document. Only the receiving department can cancel forwarded documents.']);
         exit();
     }
 

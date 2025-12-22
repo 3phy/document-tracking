@@ -1,35 +1,23 @@
 <?php
 require_once '../config/cors.php';
 require_once '../config/database.php';
-require_once '../config/jwt.php';
+require_once '../config/auth.php';
+require_once '../config/response.php';
 
-$database = new Database();
-$db = $database->getConnection();
-$jwt = new JWT();
+try {
+    $database = new Database();
+    $db = $database->getConnection();
+} catch (Exception $e) {
+    error_log("Database connection failed in verify: " . $e->getMessage());
+    Response::error('Database connection failed', 500);
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit();
+    Response::methodNotAllowed();
 }
 
-$headers = getallheaders();
-$auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-
-if (empty($auth_header) || !preg_match('/Bearer\s(\S+)/', $auth_header, $matches)) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'No token provided']);
-    exit();
-}
-
-$token = $matches[1];
-$payload = $jwt->decode($token);
-
-if (!$payload || $payload['exp'] < time()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Invalid or expired token']);
-    exit();
-}
+// Verify token using Auth helper
+$payload = Auth::requireAuth();
 
 try {
     $query = "SELECT u.id, u.name, u.email, u.role, u.is_active, u.department_id, d.name as department_name 
@@ -44,21 +32,14 @@ try {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$user['is_active']) {
-            http_response_code(401);
-            echo json_encode(['success' => false, 'message' => 'Account is deactivated']);
-            exit();
+            Response::error('Account is deactivated', 401);
         }
         
-        echo json_encode([
-            'success' => true,
-            'user' => $user
-        ]);
+        Response::success(['user' => $user]);
     } else {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'User not found']);
+        Response::error('User not found', 401);
     }
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error']);
+    Response::serverError('Failed to verify user', $e);
 }
 ?>

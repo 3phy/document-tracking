@@ -83,14 +83,22 @@ try {
         exit();
     }
 
+    // Resolve file path (handle both relative and absolute paths)
     $file_path = $document['file_path'];
-    $filename = $document['filename'] ?: basename($file_path);
-
+    
+    // If path is relative, resolve it relative to project root
     if (!file_exists($file_path)) {
+        $relativePath = str_replace(['../', './', '\\'], ['', '', '/'], $file_path);
+        $file_path = realpath(__DIR__ . '/../../' . $relativePath);
+    }
+    
+    if (!$file_path || !file_exists($file_path)) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'File not found on server']);
+        echo json_encode(['success' => false, 'message' => 'File not found on server: ' . $document['file_path']]);
         exit();
     }
+    
+    $filename = $document['filename'] ?: basename($file_path);
 
     // ✅ Detect MIME type
     $mimeType = mime_content_type($file_path) ?: 'application/octet-stream';

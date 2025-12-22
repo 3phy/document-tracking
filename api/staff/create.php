@@ -32,13 +32,6 @@ if (!$payload || $payload['exp'] < time()) {
     exit();
 }
 
-// Check if user is admin
-if ($payload['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Admin access required']);
-    exit();
-}
-
 $data = json_decode(file_get_contents("php://input"), true);
 
 if (!isset($data['name']) || !isset($data['email']) || !isset($data['password'])) {
@@ -47,28 +40,76 @@ if (!isset($data['name']) || !isset($data['email']) || !isset($data['password'])
     exit();
 }
 
-$name = $data['name'];
-$email = $data['email'];
-$password = $data['password'];
-$role = isset($data['role']) ? $data['role'] : 'staff';
-$department_id = isset($data['department_id']) ? $data['department_id'] : null;
-$is_active = isset($data['is_active']) ? (bool)$data['is_active'] : true;
-
-// Validate email
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid email format']);
-    exit();
-}
-
-// Validate role
-if (!in_array($role, ['admin', 'staff'])) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Invalid role']);
-    exit();
-}
-
 try {
+    // Get user's current role and department from database (more reliable than JWT token)
+    $user_query = "SELECT role, department_id FROM users WHERE id = ?";
+    $user_stmt = $db->prepare($user_query);
+    $user_stmt->execute([$payload['user_id']]);
+    $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user_data) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'User not found']);
+        exit();
+    }
+    
+    $user_role = strtolower(trim($user_data['role']));
+    $user_dept_id = $user_data['department_id'] ? (int)$user_data['department_id'] : null;
+    
+    // Check if user is admin or department_head
+    if (!in_array($user_role, ['admin', 'department_head'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied. Admin or Department Head privileges required.']);
+        exit();
+    }
+    
+    // For department_head, verify they have a department
+    if ($user_role === 'department_head' && !$user_dept_id) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Department head must be assigned to a department']);
+        exit();
+    }
+
+    $name = $data['name'];
+    $email = $data['email'];
+    $password = $data['password'];
+    $role = isset($data['role']) ? $data['role'] : 'staff';
+    $department_id = isset($data['department_id']) ? $data['department_id'] : null;
+    $is_active = isset($data['is_active']) ? (bool)$data['is_active'] : true;
+
+    // For department_head, restrict role and department
+    if ($user_role === 'department_head') {
+        // Department head can only create staff in their department
+        if ($department_id != $user_dept_id) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'You can only add staff to your own department']);
+            exit();
+        }
+        
+        // Department head can only create staff role (not admin or department_head)
+        if ($role !== 'staff') {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'You can only create staff members']);
+            exit();
+        }
+        
+        // Force department_id to their department
+        $department_id = $user_dept_id;
+    }
+
+    // Validate email
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid email format']);
+        exit();
+    }
+
+    // Validate role
+    if (!in_array($role, ['admin', 'staff', 'department_head'])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid role']);
+        exit();
+    }
     // Check if email already exists
     $check_query = "SELECT id FROM users WHERE email = :email";
     $check_stmt = $db->prepare($check_query);

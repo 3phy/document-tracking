@@ -63,13 +63,18 @@ try {
         exit();
     }
 
-    // ✅ Fetch forwarding history
+    // ✅ Fetch forwarding history with both forwarded_by and received_by
     $histQuery = "
-        SELECT f.*, df.name AS from_department_name, dt.name AS to_department_name, u.name AS forwarded_by_name
+        SELECT f.*, 
+               df.name AS from_department_name, 
+               dt.name AS to_department_name, 
+               fu.name AS forwarded_by_name,
+               ru.name AS received_by_name
         FROM document_forwarding_history f
         LEFT JOIN departments df ON f.from_department_id = df.id
-        LEFT JOIN departments dt ON f.to_department_id   = dt.id
-        LEFT JOIN users u ON f.forwarded_by = u.id
+        LEFT JOIN departments dt ON f.to_department_id = dt.id
+        LEFT JOIN users fu ON f.forwarded_by = fu.id
+        LEFT JOIN users ru ON f.received_by = ru.id
         WHERE f.document_id = ?
         ORDER BY f.forwarded_at ASC";
     $histStmt = $db->prepare($histQuery);
@@ -91,26 +96,55 @@ try {
         'canceled_at'     => $document['canceled_at']
     ];
 
-    // Intermediate forwards
+    // Process forwarding history - show receives at each department
     foreach ($forwardingHistory as $f) {
+        // Determine if this is the final destination
+        $is_final = ((int)$f['to_department_id'] === (int)$document['department_id']);
+        
+        // Check if document was actually received at this department
+        $was_received = !empty($f['received_by']) && !empty($f['received_at']);
+        
+        // Only show received info if actually received
+        if ($was_received) {
+            $action = 'received';
+            $user_name = $f['received_by_name'] ?: 'System User';
+            $timestamp = $f['received_at'];
+            $status = $is_final ? 'Received' : 'Received';
+        } else {
+            $action = 'forwarded';
+            $user_name = $f['forwarded_by_name'] ?: 'System User';
+            $timestamp = $f['forwarded_at'];
+            $status = 'Pending';
+        }
+        
         $routingDetails[] = [
             'department_name' => $f['to_department_name'] ?: 'Unknown Department',
-            'action'          => 'forwarded',
-            'timestamp'       => $f['forwarded_at'],
-            'user_name'       => $f['forwarded_by_name'] ?: 'System',
-            'status'          => 'Pending'
+            'action'          => $action,
+            'timestamp'       => $timestamp,
+            'user_name'       => $user_name,
+            'status'          => $status,
+            'forwarded_by'    => $f['forwarded_by_name'],
+            'received_by'     => $f['received_by_name'],
+            'was_received'    => $was_received // Flag to indicate if actually received
         ];
     }
 
-    // Destination / final department node (if received)
-    if (strtolower($document['status']) === 'received') {
-        $routingDetails[] = [
-            'department_name' => $document['destination_department_name'] ?: 'Destination Department',
-            'action'          => 'received',
-            'timestamp'       => $document['received_at'] ?: end($forwardingHistory)['forwarded_at'] ?? $document['uploaded_at'],
-            'user_name'       => $document['received_by_name'] ?: 'Admin User',
-            'status'          => 'Received'
-        ];
+    // If document is received but not in forwarding history (legacy data), add final destination
+    if (strtolower($document['status']) === 'received' && 
+        $document['received_by'] && 
+        !empty($forwardingHistory)) {
+        $lastForward = end($forwardingHistory);
+        // Only add if the last forward doesn't already show as received at final destination
+        if (!$lastForward['received_by'] || 
+            (int)$lastForward['to_department_id'] !== (int)$document['department_id']) {
+            $routingDetails[] = [
+                'department_name' => $document['destination_department_name'] ?: 'Destination Department',
+                'action'          => 'received',
+                'timestamp'       => $document['received_at'] ?: $lastForward['forwarded_at'],
+                'user_name'       => $document['received_by_name'] ?: 'Admin User',
+                'status'          => 'Received'
+            ];
+        }
     }
 
     echo json_encode([

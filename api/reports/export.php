@@ -32,14 +32,36 @@ if (!$payload || $payload['exp'] < time()) {
     exit();
 }
 
-// Check if user is admin
-if ($payload['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Admin access required']);
-    exit();
-}
-
 try {
+    // Get user's current role and department from database (more reliable than JWT token)
+    $user_query = "SELECT role, department_id FROM users WHERE id = ?";
+    $user_stmt = $db->prepare($user_query);
+    $user_stmt->execute([$payload['user_id']]);
+    $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user_data) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'User not found']);
+        exit();
+    }
+    
+    $user_role = strtolower(trim($user_data['role']));
+    $user_dept_id = $user_data['department_id'] ? (int)$user_data['department_id'] : null;
+    
+    // Check if user is admin or department_head
+    if (!in_array($user_role, ['admin', 'department_head'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied. Admin or Department Head privileges required.']);
+        exit();
+    }
+    
+    // For department_head, verify they have a department
+    if ($user_role === 'department_head' && !$user_dept_id) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Department head must be assigned to a department']);
+        exit();
+    }
+    
     // Get filter parameters
     $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : null;
     $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : null;
@@ -53,9 +75,21 @@ try {
               LEFT JOIN users u ON d.uploaded_by = u.id 
               LEFT JOIN users r ON d.received_by = r.id 
               LEFT JOIN departments dept ON d.department_id = dept.id 
+              LEFT JOIN document_forwarding_history dfh ON d.id = dfh.document_id
               WHERE 1=1";
     
     $params = [];
+    
+    // For department_head, only show documents that have been passed to their department
+    if ($user_role === 'department_head' && $user_dept_id) {
+        $query .= " AND (
+                    d.department_id = :dept_id 
+                    OR d.current_department_id = :dept_id 
+                    OR dfh.to_department_id = :dept_id
+                    OR dfh.from_department_id = :dept_id
+                  )";
+        $params[':dept_id'] = $user_dept_id;
+    }
     
     if ($date_from) {
         $query .= " AND DATE(d.uploaded_at) >= :date_from";
@@ -77,7 +111,7 @@ try {
         $params[':user_id'] = $user_id;
     }
     
-    $query .= " ORDER BY d.uploaded_at DESC";
+    $query .= " GROUP BY d.id ORDER BY d.uploaded_at DESC";
     
     $stmt = $db->prepare($query);
     

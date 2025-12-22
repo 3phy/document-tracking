@@ -38,7 +38,7 @@ const SystemAdmin = () => {
   };
 
   const tabs = [
-    { label: 'System Settings', icon: <SettingsIcon />, component: <SystemSettings /> },
+    { label: 'Departments Management', icon: <SettingsIcon />, component: <SystemSettings /> },
     { label: 'Database Management', icon: <DatabaseIcon />, component: <DatabaseManagement /> },
     { label: 'User Activity', icon: <UsersIcon />, component: <UserActivity /> },
   ];

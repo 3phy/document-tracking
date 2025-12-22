@@ -17,6 +17,7 @@ import {
   People as PeopleIcon,
   Assessment as ReportsIcon,
   Settings as SettingsIcon,
+  AccountCircle as AccountIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,31 +37,37 @@ const Sidebar = ({ open, onToggle }) => {
       text: 'Dashboard',
       icon: <DashboardIcon />,
       path: '/dashboard',
-      roles: ['admin', 'staff']
+      roles: ['admin', 'staff', 'department_head']
     },
     {
       text: 'Documents',
       icon: <DocumentsIcon />,
       path: '/documents',
-      roles: ['admin', 'staff']
+      roles: ['admin', 'staff', 'department_head']
     },
     {
       text: 'Staff Management',
       icon: <PeopleIcon />,
       path: '/staff',
-      roles: ['admin']
+      roles: ['admin', 'department_head']
     },
     {
       text: 'Reports',
       icon: <ReportsIcon />,
       path: '/reports',
-      roles: ['admin']
+      roles: ['admin', 'department_head']
     },
     {
       text: 'System Admin',
       icon: <SettingsIcon />,
       path: '/system-admin',
       roles: ['admin']
+    },
+    {
+      text: 'Settings',
+      icon: <AccountIcon />,
+      path: '/settings',
+      roles: ['admin', 'staff', 'department_head']
     }
   ];
 

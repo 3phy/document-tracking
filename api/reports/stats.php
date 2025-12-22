@@ -32,39 +32,116 @@ if (!$payload || $payload['exp'] < time()) {
     exit();
 }
 
-// Check if user is admin
-if ($payload['role'] !== 'admin') {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Admin access required']);
-    exit();
-}
-
 try {
+    // Get user's current role and department from database (more reliable than JWT token)
+    $user_query = "SELECT role, department_id FROM users WHERE id = ?";
+    $user_stmt = $db->prepare($user_query);
+    $user_stmt->execute([$payload['user_id']]);
+    $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user_data) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'User not found']);
+        exit();
+    }
+    
+    $user_role = strtolower(trim($user_data['role']));
+    $user_dept_id = $user_data['department_id'] ? (int)$user_data['department_id'] : null;
+    
+    // Check if user is admin or department_head
+    if (!in_array($user_role, ['admin', 'department_head'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Access denied. Admin or Department Head privileges required.']);
+        exit();
+    }
+    
+    // For department_head, verify they have a department
+    if ($user_role === 'department_head' && !$user_dept_id) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Department head must be assigned to a department']);
+        exit();
+    }
+    
+    // Get user's department_id for department_head
+    $dept_filter = "";
+    $dept_params = [];
+    
+    if ($user_role === 'department_head') {
+        
+        // Filter for documents that have been passed to this department
+        $dept_filter = " AND (
+            d.department_id = :dept_id 
+            OR d.current_department_id = :dept_id_curr 
+            OR d.upload_department_id = :dept_id_upload
+            OR EXISTS (
+                SELECT 1 FROM document_forwarding_history dfh 
+                WHERE dfh.document_id = d.id 
+                AND (dfh.to_department_id = :dept_id_history_to OR dfh.from_department_id = :dept_id_history_from)
+            )
+        )";
+        $dept_params[':dept_id'] = $user_dept_id;
+        $dept_params[':dept_id_curr'] = $user_dept_id;
+        $dept_params[':dept_id_upload'] = $user_dept_id;
+        $dept_params[':dept_id_history_to'] = $user_dept_id;
+        $dept_params[':dept_id_history_from'] = $user_dept_id;
+    }
+    
     $stats = [];
     
     // Total documents
-    $total_query = "SELECT COUNT(*) as total FROM documents";
+    $total_query = "SELECT COUNT(DISTINCT d.id) as total 
+                    FROM documents d 
+                    WHERE 1=1" . $dept_filter;
     $stmt = $db->prepare($total_query);
+    foreach ($dept_params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
     $stmt->execute();
     $stats['totalDocuments'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
     
     // Outgoing documents
-    $outgoing_query = "SELECT COUNT(*) as count FROM documents WHERE status = 'outgoing'";
+    $outgoing_query = "SELECT COUNT(DISTINCT d.id) as count 
+                       FROM documents d 
+                       WHERE d.status = 'outgoing'" . $dept_filter;
     $stmt = $db->prepare($outgoing_query);
+    foreach ($dept_params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
     $stmt->execute();
     $stats['outgoingCount'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // Pending documents
-    $pending_query = "SELECT COUNT(*) as count FROM documents WHERE status = 'pending'";
+    $pending_query = "SELECT COUNT(DISTINCT d.id) as count 
+                      FROM documents d 
+                      WHERE d.status = 'pending'" . $dept_filter;
     $stmt = $db->prepare($pending_query);
+    foreach ($dept_params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
     $stmt->execute();
     $stats['pendingCount'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // Received documents
-    $received_query = "SELECT COUNT(*) as count FROM documents WHERE status = 'received'";
+    $received_query = "SELECT COUNT(DISTINCT d.id) as count 
+                       FROM documents d 
+                       WHERE d.status = 'received'" . $dept_filter;
     $stmt = $db->prepare($received_query);
+    foreach ($dept_params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
     $stmt->execute();
     $stats['receivedCount'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
+    
+    // Rejected/Cancelled documents
+    $rejected_query = "SELECT COUNT(DISTINCT d.id) as count 
+                       FROM documents d 
+                       WHERE d.status = 'rejected'" . $dept_filter;
+    $stmt = $db->prepare($rejected_query);
+    foreach ($dept_params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->execute();
+    $stats['rejectedCount'] = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
     
     // Completion rate
     $completion_rate = 0;
@@ -79,6 +156,7 @@ try {
     ]);
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error']);
+    error_log("Stats API Error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
 ?>

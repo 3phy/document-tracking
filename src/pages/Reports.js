@@ -47,11 +47,12 @@ const Reports = () => {
     outgoingCount: 0,
     pendingCount: 0,
     receivedCount: 0,
+    rejectedCount: 0,
     completionRate: 0,
   });
 
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'department_head') {
       fetchReports();
       fetchStats();
     }
@@ -136,18 +137,31 @@ const Reports = () => {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'outgoing': return 'primary';
       case 'pending': return 'warning';
       case 'received': return 'success';
+      case 'rejected':
+      case 'cancelled':
+      case 'canceled': return 'error';
       default: return 'default';
     }
   };
 
-  if (user?.role !== 'admin') {
+  const getDisplayStatus = (status) => {
+    const s = (status || '').toLowerCase();
+    // Map backend 'rejected' status to 'cancelled' for display
+    if (s === 'rejected' || s === 'cancelled' || s === 'canceled') {
+      return 'cancelled';
+    }
+    return s;
+  };
+
+  if (!['admin', 'department_head'].includes(user?.role)) {
     return (
       <Alert severity="error">
-        Access denied. Admin privileges required.
+        Access denied. Admin or Department Head privileges required.
       </Alert>
     );
   }
@@ -285,6 +299,34 @@ const Reports = () => {
             </CardContent>
           </Card>
         </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center">
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    backgroundColor: 'error.main',
+                    color: 'white',
+                    mr: 2,
+                  }}
+                >
+                  <ReportIcon />
+                </Box>
+                <Box>
+                  <Typography variant="h4" component="div">
+                    {stats.rejectedCount || 0}
+                  </Typography>
+                  <Typography color="text.secondary">
+                    Cancelled
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
       </Grid>
 
       {/* Filters */}
@@ -326,6 +368,7 @@ const Reports = () => {
                   <MenuItem value="outgoing">Outgoing</MenuItem>
                   <MenuItem value="pending">Pending</MenuItem>
                   <MenuItem value="received">Received</MenuItem>
+                  <MenuItem value="rejected">Cancelled</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -391,7 +434,7 @@ const Reports = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={report.status}
+                        label={getDisplayStatus(report.status)}
                         color={getStatusColor(report.status)}
                         size="small"
                         sx={{ textTransform: 'capitalize' }}

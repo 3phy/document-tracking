@@ -72,10 +72,11 @@ const DatabaseManagement = () => {
       });
 
       if (response.data.success) {
-        setBackupHistory(response.data.backups);
+        setBackupHistory(response.data.backups || []);
       }
     } catch (error) {
       console.error('Backup history error:', error);
+      setBackupHistory([]);
     }
   };
 

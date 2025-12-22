@@ -14,6 +14,7 @@ import {
   Alert,
   Button,
   TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   Description as DocumentIcon,
@@ -22,6 +23,7 @@ import {
   Pending as PendingIcon,
   TrendingUp as TrendingIcon,
   Search as SearchIcon,
+  Business as DepartmentIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -31,32 +33,29 @@ import API_BASE_URL from '../config/api';
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [stats, setStats] = useState({
     totalDocuments: 0,
     outgoingDocuments: 0,
     pendingDocuments: 0,
     receivedDocuments: 0,
   });
+
   const [recentDocuments, setRecentDocuments] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [userDepartment, setUserDepartment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  // ✅ Only search (no sort)
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredDocuments, setFilteredDocuments] = useState([]);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
-  useEffect(() => {
-    handleSearch();
-  }, [searchQuery, recentDocuments]);
-
   const fetchDashboardData = async () => {
     try {
       const token = localStorage.getItem('token');
+
       const userResponse = await axios.get(`${API_BASE_URL}/auth/verify.php`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -65,37 +64,29 @@ const Dashboard = () => {
         setUserDepartment(userResponse.data.user.department_name);
       }
 
-      const statsResponse = await axios.get(`${API_BASE_URL}/dashboard/stats.php`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const [statsRes, docsRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/dashboard/stats.php`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${API_BASE_URL}/documents/list.php`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
 
-      if (statsResponse.data.success) {
-        setStats(statsResponse.data.stats);
-        setRecentDocuments(statsResponse.data.recentDocuments || []);
-      } else {
-        setError('Failed to load dashboard data');
+      if (statsRes.data.success) {
+        setStats(statsRes.data.stats);
+        setRecentDocuments(statsRes.data.recentDocuments || []);
       }
-    } catch (error) {
-      console.error('Dashboard error:', error);
+
+      if (docsRes.data.success) {
+        setDocuments(docsRes.data.documents);
+      }
+    } catch (err) {
+      console.error(err);
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  };
-
-  // ✅ Search logic only
-  const handleSearch = () => {
-    let docs = [...recentDocuments];
-    if (searchQuery.trim() !== '') {
-      const query = searchQuery.toLowerCase();
-      docs = docs.filter(
-        (doc) =>
-          doc.title.toLowerCase().includes(query) ||
-          (doc.department_name && doc.department_name.toLowerCase().includes(query)) ||
-          (doc.status && doc.status.toLowerCase().includes(query))
-      );
-    }
-    setFilteredDocuments(docs);
   };
 
   const getStatusColor = (status) => {
@@ -124,20 +115,37 @@ const Dashboard = () => {
     }
   };
 
+  const filteredRecentDocs = recentDocuments.filter((doc) =>
+    searchQuery
+      ? doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.department_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      : true
+  );
+
+  // 🔹 Group documents by department
+  const groupedDepartments = Object.entries(
+    documents.reduce((acc, doc) => {
+      const dept =
+        doc.current_department_name ||
+        doc.department_name ||
+        'No Department';
+
+      acc[dept] = acc[dept] || [];
+      acc[dept].push(doc);
+      return acc;
+    }, {})
+  );
+
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box display="flex" justifyContent="center" minHeight="400px">
         <CircularProgress />
       </Box>
     );
   }
 
   if (error) {
-    return (
-      <Alert severity="error" sx={{ mb: 2 }}>
-        {error}
-      </Alert>
-    );
+    return <Alert severity="error">{error}</Alert>;
   }
 
   return (
@@ -145,159 +153,122 @@ const Dashboard = () => {
       <Typography variant="h4" gutterBottom>
         Dashboard
       </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+
+      <Typography variant="body1" color="text.secondary" mb={3}>
         Welcome back, {user?.name}!
         {userDepartment && (
-          <span>
-            {' '}
-            You're viewing documents for the <strong>{userDepartment}</strong> department.
-          </span>
-        )}
-        {!userDepartment && user?.role === 'staff' && (
-          <span> You're not assigned to any department yet.</span>
+          <> You're viewing documents for <strong>{userDepartment}</strong>.</>
         )}
       </Typography>
 
+      {/* 📊 STATS */}
+      <Grid container spacing={3} mb={3}>
+        {[
+          { label: 'Total Documents', value: stats.totalDocuments, icon: <DocumentIcon />, color: 'primary.main' },
+          { label: 'Outgoing', value: stats.outgoingDocuments, icon: <UploadIcon />, color: 'primary.light' },
+          { label: 'Pending', value: stats.pendingDocuments, icon: <PendingIcon />, color: 'warning.main' },
+          { label: 'Received', value: stats.receivedDocuments, icon: <ReceivedIcon />, color: 'success.main' },
+        ].map((item, i) => (
+          <Grid item xs={12} sm={6} md={3} key={i}>
+            <Card>
+              <CardContent>
+                <Box display="flex" alignItems="center">
+                  <Box sx={{ p: 2, borderRadius: 2, bgcolor: item.color, color: 'white', mr: 2 }}>
+                    {item.icon}
+                  </Box>
+                  <Box>
+                    <Typography variant="h4">{item.value}</Typography>
+                    <Typography color="text.secondary">{item.label}</Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* 🏢 DEPARTMENTS */}
+      <Typography variant="h6" mb={2}>
+        Departments
+      </Typography>
+
+      <Grid container spacing={3} mb={4}>
+        {groupedDepartments.map(([deptName, docs]) => (
+          <Grid item xs={12} sm={6} md={4} key={deptName}>
+            <Card
+              sx={{ cursor: 'pointer', '&:hover': { boxShadow: 6 } }}
+              onClick={() =>
+                navigate(`/documents/department/${encodeURIComponent(deptName)}`)
+              }
+            >
+              <CardContent>
+                <Box display="flex" alignItems="center" gap={2}>
+                  <DepartmentIcon color="primary" />
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {deptName}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {docs.length} document{docs.length !== 1 && 's'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
       <Grid container spacing={3}>
-        {/* ✅ Stats Cards */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center">
-                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'primary.main', color: 'white', mr: 2 }}>
-                  <DocumentIcon />
-                </Box>
-                <Box>
-                  <Typography variant="h4">{stats.totalDocuments}</Typography>
-                  <Typography color="text.secondary">Total Documents</Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center">
-                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'primary.light', color: 'white', mr: 2 }}>
-                  <UploadIcon />
-                </Box>
-                <Box>
-                  <Typography variant="h4">{stats.outgoingDocuments}</Typography>
-                  <Typography color="text.secondary">Outgoing</Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center">
-                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'warning.main', color: 'white', mr: 2 }}>
-                  <PendingIcon />
-                </Box>
-                <Box>
-                  <Typography variant="h4">{stats.pendingDocuments}</Typography>
-                  <Typography color="text.secondary">Pending</Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center">
-                <Box sx={{ p: 2, borderRadius: 2, backgroundColor: 'success.main', color: 'white', mr: 2 }}>
-                  <ReceivedIcon />
-                </Box>
-                <Box>
-                  <Typography variant="h4">{stats.receivedDocuments}</Typography>
-                  <Typography color="text.secondary">Received</Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* ✅ Recent Documents */}
+        {/* 🕘 RECENT DOCUMENTS */}
         <Grid item xs={12} md={8}>
           <Card>
             <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+              <Box display="flex" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Recent Documents</Typography>
-
-                {/* 🔍 Search Field Only */}
                 <TextField
                   size="small"
-                  variant="outlined"
-                  placeholder="Search documents..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   InputProps={{
-                    startAdornment: <SearchIcon sx={{ mr: 1, color: 'gray' }} />,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Box>
 
-              {(filteredDocuments.length > 0 ? filteredDocuments : recentDocuments).length > 0 ? (
+              {filteredRecentDocs.length ? (
                 <List>
-                  {(filteredDocuments.length > 0 ? filteredDocuments : recentDocuments).map((doc, index) => (
-                    <ListItem key={index} divider={index < recentDocuments.length - 1}>
+                  {filteredRecentDocs.map((doc, i) => (
+                    <ListItem key={i} divider>
                       <ListItemIcon>{getStatusIcon(doc.status)}</ListItemIcon>
                       <ListItemText
                         primary={doc.title}
-                        secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.secondary">
-                              Uploaded: {new Date(doc.uploaded_at).toLocaleDateString()}
-                            </Typography>
-                            {doc.department_name && (
-                              <Typography variant="body2" color="primary">
-                                Department: {doc.department_name}
-                              </Typography>
-                            )}
-                            {doc.received_by_name && (
-                              <Typography variant="body2" color="success.main">
-                                Received by: {doc.received_by_name}
-                              </Typography>
-                            )}
-                          </Box>
-                        }
+                        secondary={doc.department_name}
                       />
-                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                        <Chip
-                          label={doc.status}
-                          color={getStatusColor(doc.status)}
-                          size="small"
-                          sx={{ textTransform: 'capitalize' }}
-                        />
-                        {doc.department_name && (
-                          <Chip
-                            label={doc.department_name}
-                            color="secondary"
-                            variant="outlined"
-                            size="small"
-                          />
-                        )}
-                      </Box>
+                      <Chip
+                        label={doc.status}
+                        size="small"
+                        color={getStatusColor(doc.status)}
+                        sx={{ textTransform: 'capitalize' }}
+                      />
                     </ListItem>
                   ))}
                 </List>
               ) : (
-                <Typography color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                  No matching documents
+                <Typography color="text.secondary" textAlign="center">
+                  No documents found
                 </Typography>
               )}
             </CardContent>
           </Card>
         </Grid>
 
-        {/* ✅ Quick Actions */}
+        {/* ⚡ QUICK ACTIONS — NOT REMOVED */}
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>

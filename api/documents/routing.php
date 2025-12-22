@@ -1,36 +1,23 @@
 <?php
 require_once '../config/cors.php';
 require_once '../config/database.php';
-require_once '../config/jwt.php';
+require_once '../config/auth.php';
+require_once '../config/response.php';
 
-$database = new Database();
-$db = $database->getConnection();
-$jwt = new JWT();
+try {
+    $database = new Database();
+    $db = $database->getConnection();
+} catch (Exception $e) {
+    error_log("Database connection failed in routing: " . $e->getMessage());
+    Response::error('Database connection failed', 500);
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-    exit();
+    Response::methodNotAllowed();
 }
 
-// Verify token
-$headers = getallheaders();
-$auth_header = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-
-if (empty($auth_header) || !preg_match('/Bearer\s(\S+)/', $auth_header, $matches)) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'No token provided']);
-    exit();
-}
-
-$token = $matches[1];
-$payload = $jwt->decode($token);
-
-if (!$payload || $payload['exp'] < time()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Invalid or expired token']);
-    exit();
-}
+// Verify token using Auth helper
+$payload = Auth::requireAuth();
 
 $user_id = $payload['user_id'];
 
@@ -45,41 +32,68 @@ try {
 
     if (!$user_department_id) {
         // Return empty routing info if user has no department
-        echo json_encode([
-            'success' => true,
+        Response::success([
             'user_department_id' => null,
-            'routing_info' => [],
-            'message' => 'User has no department assigned - no routing available'
-        ]);
-        exit();
+            'routing_info' => []
+        ], 'User has no department assigned - no routing available');
     }
 
     // Check if routing table exists
-    $table_check = $db->query("SHOW TABLES LIKE 'document_routing'");
-    $routing_table_exists = $table_check->rowCount() > 0;
+    try {
+        $table_check = $db->query("SHOW TABLES LIKE 'document_routing'");
+        $routing_table_exists = $table_check ? $table_check->rowCount() > 0 : false;
+    } catch (Exception $e) {
+        error_log("Error checking routing table: " . $e->getMessage());
+        $routing_table_exists = false;
+    }
     
     $routing_rules = [];
     
     if ($routing_table_exists) {
-        // Get routing information for the user's department
-        $routing_query = "SELECT 
-                            dr.from_department_id,
-                            dr.to_department_id,
-                            dr.intermediate_department_id,
-                            from_dept.name as from_department_name,
-                            to_dept.name as to_department_name,
-                            inter_dept.name as intermediate_department_name
-                          FROM document_routing dr
-                          LEFT JOIN departments from_dept ON dr.from_department_id = from_dept.id
-                          LEFT JOIN departments to_dept ON dr.to_department_id = to_dept.id
-                          LEFT JOIN departments inter_dept ON dr.intermediate_department_id = inter_dept.id
-                          WHERE dr.from_department_id = :user_dept_id AND dr.is_active = 1
-                          ORDER BY to_dept.name";
+        // Check if intermediate_department_id column exists
+        $column_check = $db->query("SHOW COLUMNS FROM document_routing LIKE 'intermediate_department_id'");
+        $has_intermediate_column = $column_check && $column_check->rowCount() > 0;
         
-        $routing_stmt = $db->prepare($routing_query);
-        $routing_stmt->bindParam(':user_dept_id', $user_department_id);
-        $routing_stmt->execute();
-        $routing_rules = $routing_stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Get routing information for the user's department
+        if ($has_intermediate_column) {
+            $routing_query = "SELECT 
+                                dr.from_department_id,
+                                dr.to_department_id,
+                                dr.intermediate_department_id,
+                                from_dept.name as from_department_name,
+                                to_dept.name as to_department_name,
+                                inter_dept.name as intermediate_department_name
+                              FROM document_routing dr
+                              LEFT JOIN departments from_dept ON dr.from_department_id = from_dept.id
+                              LEFT JOIN departments to_dept ON dr.to_department_id = to_dept.id
+                              LEFT JOIN departments inter_dept ON dr.intermediate_department_id = inter_dept.id
+                              WHERE dr.from_department_id = :user_dept_id AND dr.is_active = 1
+                              ORDER BY to_dept.name";
+        } else {
+            // Fallback for older table structure without intermediate_department_id
+            $routing_query = "SELECT 
+                                dr.from_department_id,
+                                dr.to_department_id,
+                                NULL as intermediate_department_id,
+                                from_dept.name as from_department_name,
+                                to_dept.name as to_department_name,
+                                NULL as intermediate_department_name
+                              FROM document_routing dr
+                              LEFT JOIN departments from_dept ON dr.from_department_id = from_dept.id
+                              LEFT JOIN departments to_dept ON dr.to_department_id = to_dept.id
+                              WHERE dr.from_department_id = :user_dept_id AND dr.is_active = 1
+                              ORDER BY to_dept.name";
+        }
+        
+        try {
+            $routing_stmt = $db->prepare($routing_query);
+            $routing_stmt->bindParam(':user_dept_id', $user_department_id, PDO::PARAM_INT);
+            $routing_stmt->execute();
+            $routing_rules = $routing_stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $queryError) {
+            error_log("Error fetching routing rules: " . $queryError->getMessage());
+            $routing_rules = [];
+        }
     }
 
     // Format routing information
@@ -100,14 +114,12 @@ try {
         ];
     }
 
-    echo json_encode([
-        'success' => true,
+    Response::success([
         'user_department_id' => $user_department_id,
         'routing_info' => $routing_info
     ]);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    Response::serverError('Failed to fetch routing information', $e);
 }
 ?>
 

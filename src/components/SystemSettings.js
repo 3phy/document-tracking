@@ -9,7 +9,6 @@ import {
   Button,
   Switch,
   FormControlLabel,
-  Divider,
   Alert,
   CircularProgress,
   Dialog,
@@ -26,27 +25,14 @@ import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Save as SaveIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import API_BASE_URL from '../config/api';
 
 const SystemSettings = () => {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
-  // System settings
-  const [settings, setSettings] = useState({
-    systemName: 'Document Tracking System',
-    maxFileSize: 10, // MB
-    allowedFileTypes: 'pdf,doc,docx,xls,xlsx,jpg,jpeg,png',
-    autoBackup: true,
-    backupFrequency: 'daily',
-    emailNotifications: true,
-    sessionTimeout: 30, // minutes
-  });
 
   // Departments management
   const [departments, setDepartments] = useState([]);
@@ -55,26 +41,9 @@ const SystemSettings = () => {
   const [departmentDialogOpen, setDepartmentDialogOpen] = useState(false);
 
   useEffect(() => {
-    fetchSettings();
     fetchDepartments();
+    setLoading(false);
   }, []);
-
-  const fetchSettings = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_BASE_URL}/admin/settings.php`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (response.data.success) {
-        setSettings({ ...settings, ...response.data.settings });
-      }
-    } catch (error) {
-      console.error('Settings error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchDepartments = async () => {
     try {
@@ -91,29 +60,6 @@ const SystemSettings = () => {
     }
   };
 
-  const handleSaveSettings = async () => {
-    setSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(`${API_BASE_URL}/admin/settings.php`, settings, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (response.data.success) {
-        setSuccess('Settings saved successfully!');
-      } else {
-        setError(response.data.message || 'Failed to save settings');
-      }
-    } catch (error) {
-      console.error('Save settings error:', error);
-      setError('Failed to save settings. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleAddDepartment = () => {
     setNewDepartment({ name: '', description: '' });
@@ -228,109 +174,8 @@ const SystemSettings = () => {
       )}
 
       <Grid container spacing={3}>
-        {/* System Settings */}
-        <Grid item xs={12} md={8}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                System Configuration
-              </Typography>
-              
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="System Name"
-                    value={settings.systemName}
-                    onChange={(e) => setSettings({ ...settings, systemName: e.target.value })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Max File Size (MB)"
-                    type="number"
-                    value={settings.maxFileSize}
-                    onChange={(e) => setSettings({ ...settings, maxFileSize: parseInt(e.target.value) })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Allowed File Types"
-                    value={settings.allowedFileTypes}
-                    onChange={(e) => setSettings({ ...settings, allowedFileTypes: e.target.value })}
-                    margin="normal"
-                    helperText="Comma-separated file extensions (e.g., pdf,doc,docx)"
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Session Timeout (minutes)"
-                    type="number"
-                    value={settings.sessionTimeout}
-                    onChange={(e) => setSettings({ ...settings, sessionTimeout: parseInt(e.target.value) })}
-                    margin="normal"
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    select
-                    label="Backup Frequency"
-                    value={settings.backupFrequency}
-                    onChange={(e) => setSettings({ ...settings, backupFrequency: e.target.value })}
-                    margin="normal"
-                    SelectProps={{ native: true }}
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </TextField>
-                </Grid>
-                <Grid item xs={12}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.autoBackup}
-                        onChange={(e) => setSettings({ ...settings, autoBackup: e.target.checked })}
-                      />
-                    }
-                    label="Enable Automatic Backup"
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={settings.emailNotifications}
-                        onChange={(e) => setSettings({ ...settings, emailNotifications: e.target.checked })}
-                      />
-                    }
-                    label="Enable Email Notifications"
-                  />
-                </Grid>
-              </Grid>
-
-              <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-                <Button
-                  variant="contained"
-                  startIcon={<SaveIcon />}
-                  onClick={handleSaveSettings}
-                  disabled={saving}
-                >
-                  {saving ? 'Saving...' : 'Save Settings'}
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
         {/* Departments Management */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12}>
           <Card>
             <CardContent>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>

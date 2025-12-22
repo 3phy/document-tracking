@@ -52,7 +52,7 @@ const StaffManagement = () => {
   const [departments, setDepartments] = useState([]);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
+    if (user?.role === 'admin' || user?.role === 'department_head') {
       fetchStaff();
       fetchDepartments();
     }
@@ -102,17 +102,31 @@ const StaffManagement = () => {
       
       const method = editingStaff ? 'PUT' : 'POST';
       
+      // For department heads, ensure department_id is set to their department and role is staff
+      const submitData = { ...formData };
+      if (user?.role === 'department_head') {
+        submitData.department_id = user.department_id;
+        submitData.role = 'staff'; // Force role to staff
+      }
+      
       const response = await axios({
         method,
         url,
-        data: formData,
+        data: submitData,
         headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.data.success) {
         setDialogOpen(false);
         setEditingStaff(null);
-        setFormData({ name: '', email: '', password: '', role: 'staff', is_active: true });
+        setFormData({ 
+          name: '', 
+          email: '', 
+          password: '', 
+          role: 'staff', 
+          department_id: user?.role === 'department_head' ? user.department_id : '', 
+          is_active: true 
+        });
         fetchStaff();
         setError('');
       } else {
@@ -177,10 +191,10 @@ const StaffManagement = () => {
     }
   };
 
-  if (user?.role !== 'admin') {
+  if (!['admin', 'department_head'].includes(user?.role)) {
     return (
       <Alert severity="error">
-        Access denied. Admin privileges required.
+        Access denied. Admin or Department Head privileges required.
       </Alert>
     );
   }
@@ -196,15 +210,29 @@ const StaffManagement = () => {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">
-          Staff Management
-        </Typography>
+        <Box>
+          <Typography variant="h4">
+            Staff Management
+          </Typography>
+          {user?.role === 'department_head' && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Managing staff for {user?.department_name || 'your department'}
+            </Typography>
+          )}
+        </Box>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => {
         setEditingStaff(null);
-        setFormData({ name: '', email: '', password: '', role: 'staff', department_id: '', is_active: true });
+        setFormData({ 
+          name: '', 
+          email: '', 
+          password: '', 
+          role: 'staff', 
+          department_id: user?.role === 'department_head' ? user.department_id : '', 
+          is_active: true 
+        });
         setDialogOpen(true);
           }}
         >
@@ -240,8 +268,12 @@ const StaffManagement = () => {
                     <TableCell>{member.email}</TableCell>
                     <TableCell>
                       <Chip
-                        label={member.role}
-                        color={member.role === 'admin' ? 'primary' : 'default'}
+                        label={member.role === 'department_head' ? 'Department Head' : member.role}
+                        color={
+                          member.role === 'admin' ? 'primary' : 
+                          member.role === 'department_head' ? 'secondary' : 
+                          'default'
+                        }
                         size="small"
                         sx={{ textTransform: 'capitalize' }}
                       />
@@ -258,9 +290,13 @@ const StaffManagement = () => {
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={member.is_active}
+                            checked={Boolean(member.is_active)}
                             onChange={() => handleToggleStatus(member.id, member.is_active)}
                             color="primary"
+                            disabled={
+                              user?.role === 'department_head' && 
+                              (member.role === 'admin' || member.role === 'department_head')
+                            }
                           />
                         }
                         label={member.is_active ? 'Active' : 'Inactive'}
@@ -274,6 +310,16 @@ const StaffManagement = () => {
                         size="small"
                         onClick={() => handleEdit(member)}
                         color="primary"
+                        disabled={
+                          user?.role === 'department_head' && 
+                          (member.role === 'admin' || member.role === 'department_head')
+                        }
+                        title={
+                          user?.role === 'department_head' && 
+                          (member.role === 'admin' || member.role === 'department_head')
+                            ? 'Cannot edit administrators or department heads'
+                            : 'Edit staff member'
+                        }
                       >
                         <EditIcon />
                       </IconButton>
@@ -281,7 +327,19 @@ const StaffManagement = () => {
                         size="small"
                         onClick={() => handleDelete(member.id)}
                         color="error"
-                        disabled={member.id === user.id}
+                        disabled={
+                          member.id === user.id ||
+                          (user?.role === 'department_head' && 
+                           (member.role === 'admin' || member.role === 'department_head'))
+                        }
+                        title={
+                          member.id === user.id
+                            ? 'Cannot delete your own account'
+                            : user?.role === 'department_head' && 
+                              (member.role === 'admin' || member.role === 'department_head')
+                            ? 'Cannot delete administrators or department heads'
+                            : 'Delete staff member'
+                        }
                       >
                         <DeleteIcon />
                       </IconButton>
@@ -335,9 +393,16 @@ const StaffManagement = () => {
             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
             margin="normal"
             SelectProps={{ native: true }}
+            disabled={user?.role === 'department_head'}
+            helperText={user?.role === 'department_head' ? 'You can only create staff members' : ''}
           >
             <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
+            {user?.role === 'admin' && (
+              <>
+                <option value="department_head">Department Head</option>
+                <option value="admin">Admin</option>
+              </>
+            )}
           </TextField>
           <TextField
             fullWidth
@@ -347,13 +412,21 @@ const StaffManagement = () => {
             onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
             margin="normal"
             SelectProps={{ native: true }}
+            disabled={user?.role === 'department_head'}
+            helperText={user?.role === 'department_head' ? `Staff will be added to ${user?.department_name || 'your department'}` : ''}
           >
-            <option value="">No Department</option>
-            {departments.map((dept) => (
-              <option key={dept.id} value={dept.id}>
-                {dept.name}
-              </option>
-            ))}
+            {user?.role === 'department_head' ? (
+              <option value={user?.department_id}>{user?.department_name || 'Your Department'}</option>
+            ) : (
+              <>
+                <option value="">No Department</option>
+                {departments.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </option>
+                ))}
+              </>
+            )}
           </TextField>
           <FormControlLabel
             control={

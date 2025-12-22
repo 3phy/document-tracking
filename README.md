@@ -49,18 +49,30 @@ A comprehensive document tracking system built with Electron, React, and PHP. Th
    C:\xampp\htdocs\document-tracking\
    ```
 
-2. Update database credentials in `api/config/database.php` if needed:
-   ```php
-   private $host = "localhost";
-   private $db_name = "document_tracking";
-   private $username = "root";
-   private $password = "";
+2. Create a `.env` file in the project root (copy from `.env.example` if available):
+   ```env
+   # Database Configuration
+   DB_HOST=localhost
+   DB_NAME=document_tracking
+   DB_USERNAME=root
+   DB_PASSWORD=
+
+   # JWT Secret Key (CHANGE THIS IN PRODUCTION!)
+   JWT_SECRET_KEY=your-secret-key-here-change-this-in-production
+
+   # API Configuration
+   API_BASE_URL=http://localhost/document-tracking/api
+
+   # CORS Allowed Origins (comma-separated)
+   CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost
+
+   # Application Environment
+   APP_ENV=development
    ```
 
-3. Update JWT secret in `api/config/jwt.php`:
-   ```php
-   private $secret_key = "your-secret-key-here-change-this-in-production";
-   ```
+   **Important**: The `.env` file is gitignored. Never commit sensitive credentials to version control.
+
+3. If you prefer not to use `.env`, the system will use default values, but this is **not recommended for production**.
 
 ### 3. Frontend Setup
 
@@ -152,6 +164,18 @@ document-tracking/
 - File size limits (10MB)
 - SQL injection prevention with prepared statements
 - CORS headers for API security
+- Environment-based configuration (credentials stored in `.env`)
+- Secure error handling (no sensitive information exposure)
+- Authentication middleware for consistent security
+
+## Recent Improvements
+
+See [REFACTORING.md](REFACTORING.md) for details on recent security and code quality improvements:
+- Environment configuration system
+- Authentication middleware
+- Standardized response helpers
+- Improved error handling
+- Better CORS configuration
 
 ## Troubleshooting
 
