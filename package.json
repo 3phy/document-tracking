@@ -37,7 +37,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "electron": "^27.1.3",
-    "electron-builder": "^24.6.4",
+    "electron-builder": "^24.13.3",
     "electron-is-dev": "^3.0.1",
     "wait-on": "^7.2.0"
   },
@@ -68,10 +68,33 @@
       "category": "public.app-category.productivity"
     },
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Document Tracking System",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico",
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "target": "AppImage"
+    },
+    "extraMetadata": {
+      "main": "public/electron.js"
     }
   }
 }

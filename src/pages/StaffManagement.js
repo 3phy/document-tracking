@@ -23,11 +23,13 @@ import {
   CircularProgress,
   Switch,
   FormControlLabel,
+  InputAdornment,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   PersonAdd as PersonAddIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
@@ -41,6 +43,7 @@ const StaffManagement = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -187,41 +190,82 @@ const StaffManagement = () => {
     );
   }
 
-  const visibleStaff = showInactive
-    ? staff.filter((m) => !Boolean(m.is_active))
-    : staff.filter((m) => Boolean(m.is_active));
+  // Filter staff based on active/inactive toggle and search query
+  const filteredStaff = staff.filter((m) => {
+    const matchesStatus = showInactive 
+      ? !Boolean(m.is_active) 
+      : Boolean(m.is_active);
+    
+    if (!matchesStatus) return false;
+    
+    if (!searchQuery) return true;
+    
+    const query = searchQuery.toLowerCase();
+    return (
+      m.name?.toLowerCase().includes(query) ||
+      m.email?.toLowerCase().includes(query) ||
+      m.role?.toLowerCase().includes(query) ||
+      m.department_name?.toLowerCase().includes(query)
+    );
+  });
+
+  const visibleStaff = filteredStaff;
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4">
-            Staff Management
-          </Typography>
-          {user?.role === 'department_head' && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Managing staff for {user?.department_name || 'your department'}
+      <Box mb={3}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          <Box>
+            <Typography variant="h4">
+              Staff Management
             </Typography>
-          )}
+            {user?.role === 'department_head' && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Managing staff for {user?.department_name || 'your department'}
+              </Typography>
+            )}
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setEditingStaff(null);
+              setFormData({ 
+                name: '', 
+                email: '', 
+                password: '', 
+                role: 'staff', 
+                department_id: user?.role === 'department_head' ? user.department_id : '', 
+                is_active: true 
+              });
+              setDialogOpen(true);
+            }}
+          >
+            Add Staff Member
+          </Button>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-        setEditingStaff(null);
-        setFormData({ 
-          name: '', 
-          email: '', 
-          password: '', 
-          role: 'staff', 
-          department_id: user?.role === 'department_head' ? user.department_id : '', 
-          is_active: true 
-        });
-        setDialogOpen(true);
+        
+        {/* Search Bar */}
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search staff by name, email, role, or department..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          sx={{ 
+            mb: 2,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 2,
+            }
           }}
-        >
-          Add Staff Member
-        </Button>
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+          }}
+        />
       </Box>
 
       {error && (

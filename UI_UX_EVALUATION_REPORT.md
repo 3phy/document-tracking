@@ -73,7 +73,7 @@ This evaluation report presents a comprehensive analysis of the user interface a
 
 11. **Search Result Highlighting**: Enhance search functionality to highlight matching terms within search results, making it easier for users to identify why documents appear in filtered lists.
 
-12. **Drag-and-Drop File Upload**: Add drag-and-drop file upload capability to the upload dialog, providing an alternative interaction method that may be more intuitive for some users.
+12. **Drag-and-Drop File Upload**: Add drag-and-drop file upload capability to the upload dialog, providing an alternative interaction method that may be more intuitive for some users. (DONE)
 
 13. **File Size and Type Validation Feedback**: Display clear visual feedback regarding file size limits and accepted file types before upload attempts, preventing user frustration from rejected uploads.
 

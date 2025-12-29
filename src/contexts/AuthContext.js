@@ -22,7 +22,14 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuthStatus = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // Check for Remember Me flag
+      const rememberMe = localStorage.getItem('remember_me') === 'true';
+      
+      // Get token from appropriate storage
+      const token = rememberMe 
+        ? localStorage.getItem('token') 
+        : sessionStorage.getItem('token') || localStorage.getItem('token');
+      
       if (token) {
         const response = await axios.get(`${API_BASE_URL}/auth/verify.php`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -30,18 +37,23 @@ export const AuthProvider = ({ children }) => {
         if (response.data.success) {
           setUser(response.data.user);
         } else {
+          // Clear tokens from both storages
           localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
+          localStorage.removeItem('remember_me');
         }
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
+      localStorage.removeItem('remember_me');
     } finally {
       setLoading(false);
     }
   };
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/auth/login.php`, {
         email,
@@ -50,7 +62,19 @@ export const AuthProvider = ({ children }) => {
       
       if (response.data.success) {
         const { token, user } = response.data;
-        localStorage.setItem('token', token);
+        
+        // Store token based on Remember Me preference
+        if (rememberMe) {
+          localStorage.setItem('token', token);
+          localStorage.setItem('remember_me', 'true');
+          // Clear sessionStorage to avoid conflicts
+          sessionStorage.removeItem('token');
+        } else {
+          sessionStorage.setItem('token', token);
+          // Clear localStorage tokens and remember_me flag
+          localStorage.removeItem('token');
+          localStorage.removeItem('remember_me');
+        }
         
         // Get user info with department
         try {
@@ -79,7 +103,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // Clear tokens from both storages
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('remember_me');
     setUser(null);
   };
 
