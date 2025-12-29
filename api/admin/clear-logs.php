@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -46,14 +47,7 @@ try {
     $result = $stmt->execute();
     
     if ($result) {
-        // Log the activity
-        $logQuery = "INSERT INTO user_activities (user_id, action, description) VALUES (?, ?, ?)";
-        $logStmt = $db->prepare($logQuery);
-        $logStmt->execute([
-            $payload['user_id'],
-            'clear_logs',
-            'Cleared all system logs'
-        ]);
+        ActivityLogger::log($db, (int)$payload['user_id'], 'clear_logs', 'Cleared all system logs');
         
         echo json_encode([
             'success' => true,

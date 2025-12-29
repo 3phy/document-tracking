@@ -38,6 +38,9 @@ const DatabaseManagement = () => {
   const [backupHistory, setBackupHistory] = useState([]);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [downloadPassword, setDownloadPassword] = useState('');
+  const [pendingDownloadFile, setPendingDownloadFile] = useState(null);
 
   const handleCreateBackup = async () => {
     setLoading(true);
@@ -80,25 +83,64 @@ const DatabaseManagement = () => {
     }
   };
 
-  const handleDownloadBackup = async (backupFile) => {
+  const openDownloadDialog = (backupFile) => {
+    setError('');
+    setSuccess('');
+    setPendingDownloadFile(backupFile);
+    setDownloadPassword('');
+    setDownloadDialogOpen(true);
+  };
+
+  const closeDownloadDialog = () => {
+    setDownloadDialogOpen(false);
+    setDownloadPassword('');
+    setPendingDownloadFile(null);
+  };
+
+  const handleConfirmAndDownloadBackup = async () => {
+    if (!pendingDownloadFile) return;
+    if (!downloadPassword.trim()) {
+      setError('Password is required to download a backup.');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_BASE_URL}/admin/download-backup.php?file=${backupFile}`, {
-        headers: { Authorization: `Bearer ${token}` },
+
+      // Step-up auth: confirm password for this sensitive action
+      const confirm = await axios.post(`${API_BASE_URL}/auth/confirm-password.php`, {
+        password: downloadPassword,
+        purpose: 'backup_download'
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const confirmToken = confirm?.data?.confirm_token;
+      if (!confirmToken) {
+        setError('Password confirmation failed. Please try again.');
+        return;
+      }
+
+      const response = await axios.get(`${API_BASE_URL}/admin/download-backup.php?file=${pendingDownloadFile}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Confirm-Token': confirmToken
+        },
         responseType: 'blob'
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', backupFile);
+      link.setAttribute('download', pendingDownloadFile);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      closeDownloadDialog();
     } catch (error) {
       console.error('Download backup error:', error);
-      setError('Failed to download backup file.');
+      setError('Failed to download backup file. Please confirm your password and try again.');
     }
   };
 
@@ -230,7 +272,7 @@ const DatabaseManagement = () => {
                       <Button
                         size="small"
                         startIcon={<DownloadIcon />}
-                        onClick={() => handleDownloadBackup(backup.filename)}
+                        onClick={() => openDownloadDialog(backup.filename)}
                       >
                         Download
                       </Button>
@@ -333,6 +375,34 @@ const DatabaseManagement = () => {
             disabled={!selectedFile || loading}
           >
             {loading ? 'Restoring...' : 'Restore Database'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Download Password Dialog */}
+      <Dialog open={downloadDialogOpen} onClose={closeDownloadDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Confirm Password</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Please enter your password to download this backup file.
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="Password"
+            value={downloadPassword}
+            onChange={(e) => setDownloadPassword(e.target.value)}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDownloadDialog} disabled={loading}>Cancel</Button>
+          <Button
+            onClick={handleConfirmAndDownloadBackup}
+            variant="contained"
+            disabled={loading}
+          >
+            {loading ? 'Please wait...' : 'Download'}
           </Button>
         </DialogActions>
       </Dialog>

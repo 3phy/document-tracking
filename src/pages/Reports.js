@@ -21,6 +21,10 @@ import {
   CircularProgress,
   Alert,
   TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Assessment as ReportIcon,
@@ -35,6 +39,7 @@ const Reports = () => {
   const { user } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({
     dateFrom: '',
@@ -42,6 +47,8 @@ const Reports = () => {
     status: 'all',
     user: 'all',
   });
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
   const [stats, setStats] = useState({
     totalDocuments: 0,
     outgoingCount: 0,
@@ -57,6 +64,17 @@ const Reports = () => {
       fetchStats();
     }
   }, [user]);
+
+  // Auto-refresh reports when filters change (debounced)
+  useEffect(() => {
+    if (user?.role === 'admin' || user?.role === 'department_head') {
+      const t = setTimeout(() => {
+        setLoading(true);
+        fetchReports();
+      }, 350);
+      return () => clearTimeout(t);
+    }
+  }, [filters, user]);
 
   const fetchReports = async () => {
     try {
@@ -104,13 +122,42 @@ const Reports = () => {
     setFilters({ ...filters, [field]: value });
   };
 
-  const handleGenerateReport = () => {
-    fetchReports();
+  const openExportDialog = () => {
+    setError('');
+    setExportPassword('');
+    setExportDialogOpen(true);
   };
 
-  const handleExportReport = async () => {
+  const closeExportDialog = () => {
+    if (exporting) return;
+    setExportDialogOpen(false);
+    setExportPassword('');
+  };
+
+  const handleConfirmAndExportReport = async () => {
     try {
       const token = localStorage.getItem('token');
+      if (!exportPassword.trim()) {
+        setError('Password is required to export this report.');
+        return;
+      }
+
+      setExporting(true);
+
+      // Step-up auth: confirm password for this sensitive action (same flow as Database Management)
+      const confirm = await axios.post(`${API_BASE_URL}/auth/confirm-password.php`, {
+        password: exportPassword,
+        purpose: 'reports_export',
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const confirmToken = confirm?.data?.confirm_token;
+      if (!confirmToken) {
+        setError('Password confirmation failed. Please try again.');
+        return;
+      }
+
       const params = new URLSearchParams();
       
       if (filters.dateFrom) params.append('date_from', filters.dateFrom);
@@ -119,7 +166,10 @@ const Reports = () => {
       if (filters.user !== 'all') params.append('user_id', filters.user);
 
       const response = await axios.get(`${API_BASE_URL}/reports/export.php?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'X-Confirm-Token': confirmToken
+        },
         responseType: 'blob'
       });
 
@@ -130,9 +180,13 @@ const Reports = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+      closeExportDialog();
     } catch (error) {
       console.error('Export error:', error);
-      setError('Export failed. Please try again.');
+      setError('Export failed. Please confirm your password and try again.');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -375,16 +429,10 @@ const Reports = () => {
             <Grid item xs={12} sm={6} md={3}>
               <Box display="flex" gap={1}>
                 <Button
-                  variant="contained"
-                  startIcon={<RefreshIcon />}
-                  onClick={handleGenerateReport}
-                >
-                  Generate
-                </Button>
-                <Button
                   variant="outlined"
                   startIcon={<DownloadIcon />}
-                  onClick={handleExportReport}
+                  onClick={openExportDialog}
+                  disabled={exporting}
                 >
                   Export
                 </Button>
@@ -407,7 +455,7 @@ const Reports = () => {
                   <TableCell>Title</TableCell>
                   <TableCell>Sended To</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell>Created By</TableCell>
+                  <TableCell>Created Department</TableCell>
                   <TableCell>Received By</TableCell>
                 </TableRow>
               </TableHead>
@@ -442,7 +490,7 @@ const Reports = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">
-                        {report.uploaded_by_name || 'Unknown'}
+                        {report.upload_department_name || 'No Department'}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {new Date(report.uploaded_at).toLocaleDateString()} {new Date(report.uploaded_at).toLocaleTimeString()}
@@ -471,6 +519,37 @@ const Reports = () => {
           </TableContainer>
         </CardContent>
       </Card>
+
+      {/* Export Password Dialog */}
+      <Dialog open={exportDialogOpen} onClose={closeExportDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Confirm Password</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Please enter your password to export this report.
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="Password"
+            value={exportPassword}
+            onChange={(e) => setExportPassword(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmAndExportReport();
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeExportDialog} disabled={exporting}>Cancel</Button>
+          <Button
+            onClick={handleConfirmAndExportReport}
+            variant="contained"
+            disabled={exporting}
+          >
+            {exporting ? 'Please wait...' : 'Export'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

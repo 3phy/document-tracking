@@ -134,22 +134,41 @@ echo [5/8] Setting up environment configuration...
 echo.
 
 if not exist ".env" (
-    echo Creating .env file...
-    (
-        echo # Database Configuration
-        echo DB_HOST=localhost
-        echo DB_NAME=document_tracking
-        echo DB_USERNAME=root
-        echo DB_PASSWORD=
-        echo.
-        echo # JWT Secret Key - CHANGE THIS IN PRODUCTION!
-        echo JWT_SECRET_KEY=document-tracking-secret-key-change-in-production-!RANDOM!%RANDOM%
-        echo.
-        echo # Application Settings
-        echo APP_URL=http://localhost/document-tracking
-    ) > .env
-    echo [OK] .env file created
-    echo     WARNING: Please change JWT_SECRET_KEY in .env file for security!
+    if exist "env.template" (
+        echo Creating .env file from env.template...
+        copy /Y "env.template" ".env" >nul
+        echo [OK] .env file created
+        echo     Please set JWT_SECRET_KEY and SMTP_* values in .env before using Forgot Password OTP.
+    ) else (
+        echo Creating .env file...
+        (
+            echo # Database Configuration
+            echo DB_HOST=localhost
+            echo DB_NAME=document_tracking
+            echo DB_USERNAME=root
+            echo DB_PASSWORD=
+            echo.
+            echo # JWT Secret Key - CHANGE THIS IN PRODUCTION!
+            echo JWT_SECRET_KEY=document-tracking-secret-key-change-in-production-!RANDOM!%RANDOM%
+            echo.
+            echo # Application Settings
+            echo APP_URL=http://localhost/document-tracking
+            echo.
+            echo # App Name
+            echo APP_NAME=Document Progress Tracking System
+            echo.
+            echo # Email / SMTP (PHPMailer)
+            echo SMTP_HOST=
+            echo SMTP_PORT=587
+            echo SMTP_SECURE=tls
+            echo SMTP_USER=
+            echo SMTP_PASS=
+            echo SMTP_FROM_EMAIL=
+            echo SMTP_FROM_NAME=Document Progress Tracking System
+        ) > .env
+        echo [OK] .env file created
+        echo     WARNING: Please change JWT_SECRET_KEY and set SMTP_* in .env file.
+    )
 ) else (
     echo [SKIP] .env file already exists
 )

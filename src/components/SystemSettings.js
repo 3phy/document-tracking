@@ -15,10 +15,13 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
   IconButton,
 } from '@mui/material';
 import {
@@ -192,31 +195,53 @@ const SystemSettings = () => {
                 </Button>
               </Box>
 
-              <List>
-                {departments.map((dept) => (
-                  <ListItem key={dept.id} divider>
-                    <ListItemText
-                      primary={dept.name}
-                      secondary={dept.description}
-                    />
-                    <ListItemSecondaryAction>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditDepartment(dept)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteDepartment(dept.id)}
-                        color="error"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-              </List>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ width: 90 }}><strong>ID</strong></TableCell>
+                      <TableCell><strong>Name</strong></TableCell>
+                      <TableCell><strong>Description</strong></TableCell>
+                      <TableCell align="right" sx={{ width: 120 }}><strong>Actions</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {departments.map((dept) => (
+                      <TableRow key={dept.id} hover>
+                        <TableCell sx={{ fontFamily: 'monospace' }}>{dept.id}</TableCell>
+                        <TableCell>{dept.name}</TableCell>
+                        <TableCell>{dept.description || ''}</TableCell>
+                        <TableCell align="right">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleEditDepartment(dept)}
+                            aria-label="Edit department"
+                          >
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDeleteDepartment(dept.id)}
+                            color="error"
+                            aria-label="Delete department"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {departments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} align="center">
+                          <Typography variant="body2" color="text.secondary">
+                            No departments found
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </CardContent>
           </Card>
         </Grid>

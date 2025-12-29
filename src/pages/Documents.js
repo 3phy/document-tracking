@@ -29,6 +29,11 @@ import {
     MenuItem,
     ListItemIcon,
     ListItemText,
+    FormControlLabel,
+    Checkbox,
+    FormGroup,
+    FormControl,
+    FormLabel,
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -37,12 +42,14 @@ import {
     Download as DownloadIcon,
     Visibility as ViewIcon,
     QrCode as QrCodeIcon,
-    Route as RouteIcon,
     Forward as ForwardIcon,
     Search as SearchIcon,
     Cancel as CancelIcon,
     MoreVert as MoreVertIcon,
+    ContentCopy as ContentCopyIcon,
+    Error as ErrorIcon,
 } from '@mui/icons-material';
+import { useTheme } from '@mui/material/styles';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import API_BASE_URL from '../config/api';
@@ -50,6 +57,7 @@ import BarcodeGenerator from '../components/BarcodeGenerator';
 import BarcodeScanner from '../components/BarcodeScanner';
 
 const Documents = () => {
+    const theme = useTheme();
     const { user } = useAuth();
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -59,11 +67,12 @@ const Documents = () => {
     const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
     const [selectedDocument, setSelectedDocument] = useState(null);
     const [uploadData, setUploadData] = useState({
-        title: '',
         description: '',
-        department_id: '',
-        file: null,
+        department_ids: [], // Changed to array for multi-select
+        files: [], // Changed to array for multiple files
+        fileTitles: {}, // Object mapping file index to title for individual file titles
     });
+    const [dragActive, setDragActive] = useState(false);
     const [departments, setDepartments] = useState([]);
     const [successMessage, setSuccessMessage] = useState('');
     const [routingInfo, setRoutingInfo] = useState([]);
@@ -89,8 +98,13 @@ const Documents = () => {
 
     useEffect(() => {
         fetchDocuments();
-        fetchDepartments();
         fetchRoutingInfo();
+    }, [user]);
+
+    useEffect(() => {
+        if (user) {
+            fetchDepartments();
+        }
     }, [user]);
 
     useEffect(() => {
@@ -123,7 +137,12 @@ const Documents = () => {
             });
 
             if (response.data.success) {
-                setDepartments(response.data.departments);
+                // Filter out user's own department by default
+                const userDeptId = user?.department_id;
+                const filteredDepts = userDeptId 
+                    ? response.data.departments.filter(dept => dept.id != userDeptId)
+                    : response.data.departments;
+                setDepartments(filteredDepts);
             }
         } catch (error) {
             // Silently fail - departments not critical
@@ -147,44 +166,234 @@ const Documents = () => {
     };
 
     const handleFileUpload = (event) => {
-        const file = event.target.files[0];
-        setUploadData({ ...uploadData, file });
+        const files = Array.from(event.target.files || []);
+        if (files.length > 0) {
+            addFiles(files);
+        }
+    };
+
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") {
+            setDragActive(true);
+        } else if (e.type === "dragleave") {
+            setDragActive(false);
+        }
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length > 0) {
+            addFiles(files);
+        }
+    };
+
+    const addFiles = (newFiles) => {
+        // Filter valid file types
+        const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/jpg', 'image/png'];
+        const validFiles = newFiles.filter(file => {
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            return ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'].includes(ext);
+        });
+
+        if (validFiles.length === 0) {
+            setError('Please select valid files (PDF, DOC, DOCX, TXT, JPG, PNG)');
+            return;
+        }
+
+        // Add files to existing list
+        const updatedFiles = [...uploadData.files, ...validFiles];
+        
+        // Set default title for each new file (filename without extension)
+        const updatedTitles = { ...uploadData.fileTitles };
+        const startIndex = uploadData.files.length;
+        
+        validFiles.forEach((file, index) => {
+            const fileIndex = startIndex + index;
+            const fileName = file.name;
+            const lastDotIndex = fileName.lastIndexOf('.');
+            const fileNameWithoutExt = lastDotIndex > 0 
+                ? fileName.substring(0, lastDotIndex) 
+                : fileName;
+            // Only set if not already set (preserve user edits)
+            if (!updatedTitles[fileIndex]) {
+                updatedTitles[fileIndex] = fileNameWithoutExt;
+            }
+        });
+        
+        setUploadData({ ...uploadData, files: updatedFiles, fileTitles: updatedTitles });
+    };
+
+    const removeFile = (index) => {
+        const updatedFiles = uploadData.files.filter((_, i) => i !== index);
+        // Rebuild fileTitles object with correct indices
+        const updatedTitles = {};
+        updatedFiles.forEach((file, newIndex) => {
+            // Try to preserve title from old index, or use filename
+            const oldIndex = uploadData.files.findIndex((f, i) => i === newIndex && i < index) !== -1 
+                ? newIndex 
+                : uploadData.files.findIndex((f, i) => i > index && i - 1 === newIndex);
+            
+            if (oldIndex !== -1 && uploadData.fileTitles[oldIndex]) {
+                updatedTitles[newIndex] = uploadData.fileTitles[oldIndex];
+            } else {
+                const fileName = file.name;
+                const lastDotIndex = fileName.lastIndexOf('.');
+                updatedTitles[newIndex] = lastDotIndex > 0 
+                    ? fileName.substring(0, lastDotIndex) 
+                    : fileName;
+            }
+        });
+        setUploadData({ ...uploadData, files: updatedFiles, fileTitles: updatedTitles });
+    };
+
+    const updateFileTitle = (index, title) => {
+        setUploadData({
+            ...uploadData,
+            fileTitles: {
+                ...uploadData.fileTitles,
+                [index]: title
+            }
+        });
+    };
+
+    const handleCloseUploadDialog = () => {
+        setUploadDialogOpen(false);
+        // Reset form when dialog closes
+        setUploadData({ description: '', department_ids: [], files: [], fileTitles: {} });
+        setError('');
+        setDragActive(false);
     };
 
     const handleUpload = async () => {
-        if (!uploadData.title || !uploadData.file || !uploadData.department_id) {
-            setError('Please fill in all required fields');
+        if (!uploadData.files || uploadData.files.length === 0) {
+            setError('Please select at least one file');
+            return;
+        }
+
+        if (!uploadData.department_ids || uploadData.department_ids.length === 0) {
+            setError('Please select at least one department');
+            return;
+        }
+
+        // CRITICAL: Validate department_ids is an array with valid IDs
+        if (!Array.isArray(uploadData.department_ids)) {
+            console.error('ERROR: department_ids is not an array!', typeof uploadData.department_ids, uploadData.department_ids);
+            setError('Invalid department selection. Please try again.');
+            return;
+        }
+        
+        // CRITICAL: Ensure all department IDs are valid numbers
+        const validDeptIds = uploadData.department_ids.filter(id => {
+            const numId = Number(id);
+            return !isNaN(numId) && numId > 0;
+        });
+        
+        if (validDeptIds.length !== uploadData.department_ids.length) {
+            console.error('ERROR: Some department IDs are invalid!', uploadData.department_ids);
+            setError('Invalid department selection. Please try again.');
+            return;
+        }
+        
+        if (validDeptIds.length === 0) {
+            setError('Please select at least one valid department');
             return;
         }
 
         try {
+            // CRITICAL: Single authoritative state - array of numbers
+            const selectedDepartmentIds = validDeptIds.map(id => Number(id)); // Force to numbers
+            console.log('=== FRONTEND: Department IDs State ===');
+            console.log('selectedDepartmentIds:', selectedDepartmentIds);
+            console.log('Count:', selectedDepartmentIds.length);
+            console.log('Types:', selectedDepartmentIds.map(id => typeof id));
+            
             const formData = new FormData();
-            formData.append('title', uploadData.title);
             formData.append('description', uploadData.description);
-            formData.append('department_id', uploadData.department_id);
-            formData.append('file', uploadData.file);
+            
+            // CRITICAL: FormData construction - MUST use this exact format
+            // Loop through each department ID and append with array notation
+            selectedDepartmentIds.forEach((deptId, index) => {
+                const deptIdString = String(deptId); // Convert to string for FormData
+                formData.append('department_ids[]', deptIdString); // MUST use append(), NOT set()
+                console.log(`FormData.append('department_ids[]', '${deptIdString}')`);
+            });
+            
+            // CRITICAL: Verify FormData entries BEFORE axios.post()
+            const formDataEntries = [...formData.entries()];
+            console.log('=== FRONTEND: FormData Entries Verification ===');
+            console.log('Total FormData entries:', formDataEntries.length);
+            
+            const deptIdEntries = formDataEntries.filter(([key]) => key.startsWith('department_ids'));
+            console.log('department_ids[] entries found:', deptIdEntries.length);
+            console.log('department_ids[] entries:');
+            deptIdEntries.forEach(([key, value], index) => {
+                console.log(`  [${index}] ${key} → ${value}`);
+            });
+            
+            // CRITICAL: Hard validation - must match expected count
+            if (deptIdEntries.length !== selectedDepartmentIds.length) {
+                console.error('=== CRITICAL ERROR: FormData department_ids count mismatch ===');
+                console.error('Expected:', selectedDepartmentIds.length, 'Found:', deptIdEntries.length);
+                console.error('Expected IDs:', selectedDepartmentIds);
+                console.error('Found entries:', deptIdEntries.map(([k, v]) => v));
+                setError(`Failed to prepare department data. Expected ${selectedDepartmentIds.length} departments but found ${deptIdEntries.length}. Please try again.`);
+                return;
+            }
+            
+            // CRITICAL: Verify values match
+            const sentValues = deptIdEntries.map(([k, v]) => Number(v)).sort((a, b) => a - b);
+            const expectedValues = [...selectedDepartmentIds].sort((a, b) => a - b);
+            if (JSON.stringify(sentValues) !== JSON.stringify(expectedValues)) {
+                console.error('=== CRITICAL ERROR: FormData department_ids values mismatch ===');
+                console.error('Expected:', expectedValues);
+                console.error('Found:', sentValues);
+                setError('Department IDs mismatch. Please try again.');
+                return;
+            }
+            
+            console.log('✓ FormData validation passed - all department IDs correctly added');
+            
+            // Append each file with its individual title (defaulting to filename)
+            // Use 'files[]' notation for PHP to properly receive as array
+            uploadData.files.forEach((file, index) => {
+                formData.append('files[]', file);
+                // Use individual file title if set, otherwise use filename without extension
+                const fileTitle = uploadData.fileTitles[index] || (() => {
+                    const fileName = file.name;
+                    const lastDotIndex = fileName.lastIndexOf('.');
+                    return lastDotIndex > 0 
+                        ? fileName.substring(0, lastDotIndex) 
+                        : fileName;
+                })();
+                formData.append('titles[]', fileTitle);
+            });
 
             const token = localStorage.getItem('token');
             const response = await axios.post(`${API_BASE_URL}/documents/upload.php`, formData, {
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    'Content-Type': 'multipart/form-data',
+                    // Don't set Content-Type - axios will set it automatically with correct boundary for FormData
                 }
             });
 
             if (response.data.success) {
-                setUploadDialogOpen(false);
-                setUploadData({ title: '', description: '', department_id: '', file: null });
+                handleCloseUploadDialog();
                 fetchDocuments();
-                setError('');
-                setSuccessMessage('Document uploaded successfully!');
+                const fileCount = uploadData.files.length;
+                const deptCount = selectedDepartmentIds.length;
+                setSuccessMessage(`${fileCount} file${fileCount > 1 ? 's' : ''} uploaded successfully to ${deptCount} department${deptCount > 1 ? 's' : ''}!`);
                 // Clear success message after 3 seconds
                 setTimeout(() => setSuccessMessage(''), 3000);
             } else {
                 setError(response.data.message || 'Upload failed');
             }
         } catch (error) {
-            console.error('Upload error:', error);
             if (error.response?.data?.message) {
                 setError(error.response.data.message || 'Upload failed. Please try again.');
             } else {
@@ -238,7 +447,6 @@ const Documents = () => {
             setSuccessMessage('File downloaded successfully!');
             setTimeout(() => setSuccessMessage(''), 3000);
         } catch (error) {
-            console.error('Download error:', error);
             if (error.response?.data) {
                 // Try to read error message from blob
                 const reader = new FileReader();
@@ -312,7 +520,6 @@ const Documents = () => {
                 setError(response.data.message || 'Document not found or not available for receiving');
             }
         } catch (error) {
-            console.error('Scan error:', error);
             if (error.response?.data?.message) {
                 setError(error.response.data.message);
             } else if (error.response?.status === 403) {
@@ -345,7 +552,7 @@ const Documents = () => {
                 setAvailableDepartmentsForForward(response.data.departments || []);
             }
         } catch (error) {
-            console.error('Error fetching available departments:', error);
+            // Silently fail - available departments not critical
             setAvailableDepartmentsForForward([]);
         }
     };
@@ -508,6 +715,36 @@ const Documents = () => {
         }
     };
 
+    const handleCopyBarcode = async (document) => {
+        const value = (document?.barcode || document?.id) ? String(document.barcode || document.id) : '';
+        if (!value) {
+            setError('No barcode available to copy.');
+            return;
+        }
+
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(value);
+            } else {
+                // Fallback for older browsers / non-secure contexts
+                const textarea = window.document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                window.document.body.appendChild(textarea);
+                textarea.select();
+                window.document.execCommand('copy');
+                textarea.remove();
+            }
+
+            setSuccessMessage('Barcode copied to clipboard!');
+            setTimeout(() => setSuccessMessage(''), 2000);
+        } catch (e) {
+            setError('Failed to copy barcode. Please try again.');
+        }
+    };
+
     const getFilteredDepartments = () => {
         if (!forwardSearchTerm) return availableDepartmentsForForward;
 
@@ -546,10 +783,8 @@ const Documents = () => {
             return false;
         }
 
-        // ✅ Only the CURRENT holder department can forward
-        const isInUserDept = document.current_department_id === user.department_id;
-
-        if (!isInUserDept) {
+        // ✅ Only the current department can forward (same as cancel logic)
+        if (document.current_department_id !== user.department_id) {
             return false;
         }
 
@@ -585,15 +820,8 @@ const Documents = () => {
             return false;
         }
 
-        // When document is forwarded (outgoing), only the receiving department can cancel
-        // The forwarding department loses the right to cancel
-        if (status === 'outgoing') {
-            // Only receiving department (department_id) can cancel
-            return document.department_id === user?.department_id;
-        } else {
-            // For pending/received, current holder department can cancel
-            return document.current_department_id === user?.department_id;
-        }
+        // Only the current department can cancel the document
+        return document.current_department_id === user?.department_id;
     };
 
 
@@ -657,23 +885,35 @@ const Documents = () => {
 
     return (
         <Box>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+            <Box 
+                display="flex" 
+                justifyContent="space-between" 
+                alignItems={{ xs: 'flex-start', sm: 'center' }}
+                mb={4}
+                sx={{ flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}
+            >
                 <Box>
-                    <Typography variant="h4">
+                    <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
                         Documents
                     </Typography>
                     {user?.current_department_name && (
-                        <Typography variant="body2" color="text.secondary">
-                            Showing documents for {user.current_department_name} department
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
+                            Showing documents for <Box component="span" sx={{ fontWeight: 500, color: 'primary.main' }}>{user.current_department_name}</Box> department
                         </Typography>
                     )}
                 </Box>
-                <Box>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', width: { xs: '100%', sm: 'auto' } }}>
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={() => setUploadDialogOpen(true)}
-                        sx={{ mr: 2 }}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            px: 3,
+                            py: 1.25
+                        }}
                     >
                         Upload Document
                     </Button>
@@ -681,24 +921,35 @@ const Documents = () => {
                         variant="outlined"
                         startIcon={<ScannerIcon />}
                         onClick={() => setScannerDialogOpen(true)}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            fontWeight: 500,
+                            px: 3,
+                            py: 1.25
+                        }}
                     >
                         Scan QR to Receive
                     </Button>
                 </Box>
             </Box>
 
-            {error && (
-                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-                    {error}
-                </Alert>
-            )}
-
             {successMessage && (
-                <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+                <Alert 
+                    severity="success" 
+                    sx={{ 
+                        mb: 3,
+                        borderRadius: 2,
+                        '& .MuiAlert-message': {
+                            fontSize: '0.95rem',
+                        }
+                    }} 
+                    onClose={() => setSuccessMessage('')}
+                >
                     {successMessage}
                 </Alert>
             )}
-            <Box display="flex" justifyContent="flex-end" mb={2}>
+            <Box display="flex" justifyContent="flex-end" mb={3}>
                 <TextField
                     variant="outlined"
                     size="small"
@@ -712,24 +963,29 @@ const Documents = () => {
                             </InputAdornment>
                         ),
                     }}
-                    sx={{ width: 350 }}
+                    sx={{ 
+                        width: { xs: '100%', sm: 400 },
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: 2,
+                        }
+                    }}
                 />
             </Box>
 
 
             <Card>
-                <CardContent>
+                <CardContent sx={{ p: 0 }}>
                     <TableContainer>
                         <Table>
                             <TableHead>
                                 <TableRow>
-                                    <TableCell>Title</TableCell>
-                                    <TableCell>Source Department</TableCell>
-                                    <TableCell>Current Department</TableCell>
-                                    <TableCell>Receiving Department</TableCell>
-                                    <TableCell>Status</TableCell>
-                                    <TableCell>Created By</TableCell>
-                                    <TableCell>Actions</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Title</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Source Department</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Current Department</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Receiving Department</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Status</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Created By</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, fontSize: '0.95rem', py: 2 }}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
 
@@ -745,60 +1001,62 @@ const Documents = () => {
                                         );
                                     })
                                     .map((doc) => (
-                                        <TableRow key={doc.id}>
+                                        <TableRow
+                                            key={doc.id}
+                                            hover
+                                            sx={{ 
+                                                cursor: 'pointer',
+                                                '&:hover': {
+                                                    bgcolor: 'action.hover'
+                                                }
+                                            }}
+                                            onClick={() => handleShowRouting(doc)}
+                                        >
 
                                             {/* 🧾 Title */}
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="medium">
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Typography variant="body2" fontWeight="medium" sx={{ mb: 0.5, fontSize: '0.95rem' }}>
                                                     {doc.title}
                                                 </Typography>
                                                 {doc.description && (
-                                                    <Typography variant="caption" color="text.secondary">
+                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', display: 'block', mt: 0.5 }}>
                                                         {doc.description}
                                                     </Typography>
                                                 )}
                                             </TableCell>
 
                                             {/* 🏢 Source Department */}
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="medium">
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Typography variant="body2" fontWeight="medium" sx={{ mb: 0.5, fontSize: '0.95rem' }}>
                                                     {doc.upload_department_name || 'No Department'}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary">
+                                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
                                                     Source Department
                                                 </Typography>
                                             </TableCell>
 
                                             {/* 🏢 Current Department */}
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="medium">
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Typography variant="body2" fontWeight="medium" sx={{ mb: 0.5, fontSize: '0.95rem' }}>
                                                     {doc.current_department_name || 'No Department'}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary">
+                                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
                                                     Current Department
                                                 </Typography>
                                             </TableCell>
 
                                             {/* 🏢 Receiving Department */}
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight="medium">
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Typography variant="body2" fontWeight="medium" sx={{ mb: 0.5, fontSize: '0.95rem' }}>
                                                     {doc.department_name || 'No Department'}
-                                                    <Tooltip title="Show Routing Path">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleShowRouting(doc)}
-                                                        >
-                                                            <RouteIcon fontSize="small" color="info" />
-                                                        </IconButton>
-                                                    </Tooltip>
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary">
+                                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
                                                     Receiving Department
                                                 </Typography>
                                             </TableCell>
 
                                             {/* 📊 Status */}
-                                            <TableCell>
+                                            <TableCell sx={{ py: 2.5 }}>
                                                 <Tooltip
                                                     title={
                                                         getAdjustedStatus(doc) === 'cancelled'
@@ -816,61 +1074,105 @@ const Documents = () => {
                                                         sx={{
                                                             textTransform: 'capitalize',
                                                             cursor: getAdjustedStatus(doc) === 'cancelled' ? 'pointer' : 'default',
+                                                            fontWeight: 500,
+                                                            minWidth: 80
                                                         }}
                                                     />
                                                 </Tooltip>
                                             </TableCell>
 
-
-
-
                                             {/* 👤 Created By */}
-                                            <TableCell>
-                                                <Typography variant="body2">
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Typography variant="body2" sx={{ mb: 0.5, fontSize: '0.95rem' }}>
                                                     {doc.uploaded_by_name || 'Unknown'}
                                                 </Typography>
-                                                <Typography variant="caption" color="text.secondary">
+                                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
                                                     {new Date(doc.uploaded_at).toLocaleDateString()}{" "}
                                                     {new Date(doc.uploaded_at).toLocaleTimeString()}
                                                 </Typography>
                                             </TableCell>
 
                                             {/* ⚙️ Actions */}
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                            <TableCell sx={{ py: 2.5 }}>
+                                                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                                                    {/* Copy Barcode */}
+                                                    <Tooltip title="Copy Barcode" arrow>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleCopyBarcode(doc);
+                                                            }}
+                                                            sx={{ 
+                                                                '&:hover': {
+                                                                    bgcolor: 'primary.light',
+                                                                    color: 'white'
+                                                                }
+                                                            }}
+                                                        >
+                                                            <ContentCopyIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+
                                                     {/* Cancel */}
                                                     {canCancelDocument(doc) && (
-                                                        <Tooltip title="Cancel Document">
+                                                        <Tooltip title="Cancel Document" arrow>
                                                             <IconButton
                                                                 size="small"
-                                                                onClick={() => handleCancelDocument(doc)}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleCancelDocument(doc);
+                                                                }}
                                                                 color="error"
+                                                                sx={{ 
+                                                                    '&:hover': {
+                                                                        bgcolor: 'error.dark',
+                                                                        color: 'white'
+                                                                    }
+                                                                }}
                                                             >
-                                                                <CancelIcon />
+                                                                <CancelIcon fontSize="small" />
                                                             </IconButton>
                                                         </Tooltip>
                                                     )}
 
                                                     {/* Forward */}
                                                     {canForwardDocument(doc) && (
-                                                        <Tooltip title="Forward Document">
+                                                        <Tooltip title="Forward Document" arrow>
                                                             <IconButton
                                                                 size="small"
-                                                                onClick={() => handleForwardDocument(doc)}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleForwardDocument(doc);
+                                                                }}
                                                                 color="secondary"
+                                                                sx={{ 
+                                                                    '&:hover': {
+                                                                        bgcolor: 'secondary.dark',
+                                                                        color: 'white'
+                                                                    }
+                                                                }}
                                                             >
-                                                                <ForwardIcon />
+                                                                <ForwardIcon fontSize="small" />
                                                             </IconButton>
                                                         </Tooltip>
                                                     )}
 
                                                     {/* More actions */}
-                                                    <Tooltip title="Document Actions">
+                                                    <Tooltip title="Document Actions" arrow>
                                                         <IconButton
                                                             size="small"
-                                                            onClick={(e) => handleActionMenuOpen(e, doc)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleActionMenuOpen(e, doc);
+                                                            }}
+                                                            sx={{ 
+                                                                '&:hover': {
+                                                                    bgcolor: 'action.hover'
+                                                                }
+                                                            }}
                                                         >
-                                                            <MoreVertIcon />
+                                                            <MoreVertIcon fontSize="small" />
                                                         </IconButton>
                                                     </Tooltip>
                                                 </Box>
@@ -888,8 +1190,8 @@ const Documents = () => {
                                 );
                             }).length === 0 && (
                                     <TableRow>
-                                        <TableCell colSpan={7} align="center">
-                                            <Typography variant="body2" color="text.secondary">
+                                        <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.95rem' }}>
                                                 No matching documents found.
                                             </Typography>
                                         </TableCell>
@@ -903,17 +1205,107 @@ const Documents = () => {
 
 
             {/* Upload Dialog */}
-            <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Upload New Document</DialogTitle>
-                <DialogContent>
+            <Dialog open={uploadDialogOpen} onClose={handleCloseUploadDialog} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ pb: 2, fontWeight: 600, fontSize: '1.25rem' }}>
+                    Upload New Document
+                </DialogTitle>
+                <DialogContent dividers sx={{ pt: 3 }}>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
+                    <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 500 }}>
+                            Select Files (Drag & Drop or Click to Browse)
+                        </Typography>
+                        <input
+                            accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                            style={{ display: 'none' }}
+                            id="file-upload"
+                            type="file"
+                            multiple
+                            onChange={handleFileUpload}
+                        />
+                        <Box
+                            onDragEnter={handleDrag}
+                            onDragLeave={handleDrag}
+                            onDragOver={handleDrag}
+                            onDrop={handleDrop}
+                                sx={{ 
+                                border: '2px dashed',
+                                borderColor: dragActive ? 'primary.main' : 'divider',
+                                    borderRadius: 2,
+                                p: 4,
+                                textAlign: 'center',
+                                bgcolor: dragActive ? 'action.hover' : 'background.paper',
+                                transition: 'all 0.2s ease',
+                                cursor: 'pointer',
+                                '&:hover': {
+                                    borderColor: 'primary.main',
+                                    bgcolor: 'action.hover',
+                                }
+                            }}
+                            onClick={() => document.getElementById('file-upload').click()}
+                        >
+                            <UploadIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
+                            <Typography variant="body1" sx={{ mb: 1, fontWeight: 500 }}>
+                                {dragActive ? 'Drop files here' : 'Drag & drop files here or click to browse'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Supports: PDF, DOC, DOCX, TXT, JPG, PNG (Multiple files allowed)
+                            </Typography>
+                        </Box>
+                        {uploadData.files.length > 0 && (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
+                                    Selected Files ({uploadData.files.length}):
+                                </Typography>
+                                {uploadData.files.map((file, index) => (
+                                    <Box
+                                        key={index}
+                                        sx={{
+                                            p: 2,
+                                            mb: 2,
+                                            bgcolor: 'grey.50',
+                                            borderRadius: 2,
+                                            border: '1px solid',
+                                            borderColor: 'divider',
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                                {file.name} ({(file.size / 1024).toFixed(2)} KB)
+                                            </Typography>
+                                            <IconButton
+                                                size="small"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    removeFile(index);
+                                                }}
+                                                sx={{ color: 'error.main' }}
+                                            >
+                                                <CancelIcon fontSize="small" />
+                                            </IconButton>
+                    </Box>
                     <TextField
                         fullWidth
-                        label="Document Title"
-                        value={uploadData.title}
-                        onChange={(e) => setUploadData({ ...uploadData, title: e.target.value })}
-                        margin="normal"
-                        required
+                                            size="small"
+                                            label={`Document Title ${index + 1}`}
+                                            value={uploadData.fileTitles[index] || ''}
+                                            onChange={(e) => updateFileTitle(index, e.target.value)}
+                                            placeholder="Leave empty to use filename"
+                        sx={{ 
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 2,
+                            }
+                        }}
                     />
+                                    </Box>
+                                ))}
+                            </Box>
+                        )}
+                    </Box>
                     <TextField
                         fullWidth
                         label="Description"
@@ -922,37 +1314,79 @@ const Documents = () => {
                         margin="normal"
                         multiline
                         rows={3}
+                        sx={{ 
+                            mb: 2,
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: 2,
+                            }
+                        }}
                     />
-                    <TextField
-                        fullWidth
-                        select
-                        label="Destination Department"
-                        value={uploadData.department_id}
-                        onChange={(e) => setUploadData({ ...uploadData, department_id: e.target.value })}
-                        margin="normal"
-                        required
-                        SelectProps={{ native: true }}
+                    <FormControl fullWidth margin="normal" required sx={{ mb: 2 }}>
+                        <FormLabel sx={{ mb: 1.5, fontWeight: 500, fontSize: '0.875rem' }}>
+                            Destination (Select One or More Departments)
+                        </FormLabel>
+                        <Box
+                        sx={{ 
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 2,
+                                p: 2,
+                                maxHeight: 200,
+                                overflowY: 'auto',
+                                bgcolor: 'background.paper',
+                        }}
                     >
-                        <option value="">Select Department</option>
-                        {departments.map((dept) => (
-                            <option key={dept.id} value={dept.id}>
-                                {dept.name}
-                            </option>
-                        ))}
-                    </TextField>
-                    {uploadData.department_id && (
-                        <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                            <Typography variant="body2" color="info.contrastText">
-                                <strong>Document Routing:</strong>
+                            <FormGroup>
+                                {departments.length > 0 ? (
+                                    departments.map((dept) => (
+                                        <FormControlLabel
+                                            key={dept.id}
+                                            control={
+                                                <Checkbox
+                                                    checked={uploadData.department_ids.some(id => Number(id) === Number(dept.id))}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked;
+                                                        const deptIdNum = Number(dept.id); // Ensure consistent number type
+                                                        
+                                                        setUploadData({
+                                                            ...uploadData,
+                                                            department_ids: isChecked
+                                                                ? [...uploadData.department_ids.filter(id => Number(id) !== deptIdNum), deptIdNum] // Remove if exists, then add
+                                                                : uploadData.department_ids.filter(id => Number(id) !== deptIdNum) // Remove if unchecked
+                                                        });
+                                                    }}
+                                                />
+                                            }
+                                            label={dept.name}
+                                        />
+                                    ))
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                        No departments available
+                                    </Typography>
+                                )}
+                            </FormGroup>
+                        </Box>
+                        {uploadData.department_ids.length > 0 && (
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                {uploadData.department_ids.length} department{uploadData.department_ids.length > 1 ? 's' : ''} selected
                             </Typography>
-                            {(() => {
-                                const routing = routingInfo.find(r => r.to_department_id == uploadData.department_id);
+                        )}
+                    </FormControl>
+                    {uploadData.department_ids.length > 0 && (
+                        <Box sx={{ mt: 2, p: 2.5, bgcolor: 'info.light', borderRadius: 2, border: '1px solid', borderColor: 'info.main' }}>
+                            <Typography variant="body2" color="info.contrastText" sx={{ fontWeight: 600, mb: 1 }}>
+                                Document Routing:
+                            </Typography>
+                            {uploadData.department_ids.length === 1 ? (
+                                (() => {
+                                    const routing = routingInfo.find(r => r.to_department_id == uploadData.department_ids[0]);
                                 if (routing) {
                                     return (
-                                        <Typography variant="body2" color="info.contrastText" sx={{ mt: 1 }}>
-                                            Your document will be sent through: {routing.routing_path.join(' → ')}
+                                        <Typography variant="body2" color="info.contrastText" sx={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
+                                            Your document will be sent through: <Box component="span" sx={{ fontWeight: 600 }}>{routing.routing_path.join(' → ')}</Box>
                                             {routing.has_intermediate && (
-                                                <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                                <Typography variant="caption" display="block" sx={{ mt: 1.5, fontStyle: 'italic' }}>
                                                     Note: Document will first go to {routing.intermediate_department_name} before reaching the final destination.
                                                 </Typography>
                                             )}
@@ -960,43 +1394,47 @@ const Documents = () => {
                                     );
                                 } else if (routingInfo.length === 0) {
                                     return (
-                                        <Typography variant="body2" color="info.contrastText" sx={{ mt: 1 }}>
+                                        <Typography variant="body2" color="info.contrastText" sx={{ fontSize: '0.9rem' }}>
                                             Routing information not available. Document will be sent directly to selected department.
                                         </Typography>
                                     );
                                 } else {
                                     return (
-                                        <Typography variant="body2" color="info.contrastText" sx={{ mt: 1 }}>
+                                        <Typography variant="body2" color="info.contrastText" sx={{ fontSize: '0.9rem' }}>
                                             Direct routing to selected department.
                                         </Typography>
                                     );
                                 }
-                            })()}
+                                })()
+                            ) : (
+                                <Typography variant="body2" color="info.contrastText" sx={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
+                                    Separate tracking records will be created for each selected department. Each department will receive the document independently.
+                                </Typography>
+                            )}
                         </Box>
                     )}
-                    <Box sx={{ mt: 2 }}>
-                        <input
-                            accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                            style={{ display: 'none' }}
-                            id="file-upload"
-                            type="file"
-                            onChange={handleFileUpload}
-                        />
-                        <label htmlFor="file-upload">
-                            <Button variant="outlined" component="span" startIcon={<UploadIcon />}>
-                                Choose File
-                            </Button>
-                        </label>
-                        {uploadData.file && (
-                            <Typography variant="body2" sx={{ mt: 1 }}>
-                                Selected: {uploadData.file.name}
-                            </Typography>
-                        )}
-                    </Box>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setUploadDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleUpload} variant="contained">
+                <DialogActions sx={{ p: 2.5, gap: 1 }}>
+                    <Button 
+                        onClick={handleCloseUploadDialog}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3
+                        }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button 
+                        onClick={handleUpload} 
+                        variant="contained"
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3,
+                            fontWeight: 600
+                        }}
+                    >
                         Upload
                     </Button>
                 </DialogActions>
@@ -1027,15 +1465,39 @@ const Documents = () => {
             </Dialog>
 
             {/* Error Dialog */}
-            <Dialog open={errorDialogOpen} onClose={() => { setErrorDialogOpen(false); setError(''); }} maxWidth="sm" fullWidth>
-                <DialogTitle>Error</DialogTitle>
-                <DialogContent>
-                    <Typography variant="body2" color="error">
-                        {error}
+            <Dialog 
+                open={errorDialogOpen} 
+                onClose={() => { setErrorDialogOpen(false); setError(''); }} 
+                maxWidth="sm" 
+                fullWidth
+            >
+                <DialogTitle sx={{ pb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <ErrorIcon color="error" />
+                        <Typography variant="h6" component="span" sx={{ fontWeight: 600 }}>
+                            Error
+                        </Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent dividers sx={{ pt: 3 }}>
+                    <Typography variant="body1" color="text.primary" sx={{ fontSize: '0.95rem', lineHeight: 1.6 }}>
+                        {error || 'An error occurred. Please try again.'}
                     </Typography>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => { setErrorDialogOpen(false); setError(''); }}>Close</Button>
+                <DialogActions sx={{ p: 2.5 }}>
+                    <Button 
+                        onClick={() => { setErrorDialogOpen(false); setError(''); }} 
+                        variant="contained"
+                        color="primary"
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3,
+                            fontWeight: 600
+                        }}
+                    >
+                        Close
+                    </Button>
                 </DialogActions>
             </Dialog>
 
@@ -1068,7 +1530,7 @@ const Documents = () => {
                                         <strong>Routing Path & Status:</strong>
                                     </Typography>
 
-                                    <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                                    <Box sx={{ p: 2, bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.100', borderRadius: 1 }}>
                                         {dynamicRoutingData.routing_details.map((step, index) => {
                                             const isFirst = index === 0;
                                             const isLast = index === dynamicRoutingData.routing_details.length - 1;
@@ -1109,7 +1571,7 @@ const Documents = () => {
                                                                 bgcolor: isCancelledAtSource
                                                                     ? 'error.main'
                                                                     : isFirst
-                                                                        ? 'grey.700'
+                                                                        ? theme.palette.mode === 'dark' ? 'grey.400' : 'grey.700'
                                                                         : isLast
                                                                             ? 'success.main'
                                                                             : 'info.main',
@@ -1123,7 +1585,7 @@ const Documents = () => {
                                                                 </Typography>
                                                             </Typography>
 
-                                                            <Box sx={{ ml: 3, mt: 0.5, borderLeft: '2px dotted #ccc', pl: 2 }}>
+                                                            <Box sx={{ ml: 3, mt: 0.5, borderLeft: `2px dotted ${theme.palette.divider}`, pl: 2 }}>
                                                                 <Typography variant="caption" color="text.secondary" display="block">
                                                                     • {isFirst ? 'Created on:' : (step.was_received || step.action === 'received' ? 'Received on:' : 'Forwarded on:')}{' '}
                                                                     {step.timestamp ? formatDate(step.timestamp) : 'Unknown'}
@@ -1136,12 +1598,12 @@ const Documents = () => {
                                                                         <span
                                                                             style={{
                                                                             color: isCancelledAtSource
-                                                                                ? 'red'
+                                                                                    ? theme.palette.error.main
                                                                                 : isFirst
-                                                                                    ? '#1976d2'
+                                                                                        ? theme.palette.primary.main
                                                                                     : isLast
-                                                                                        ? 'green'
-                                                                                        : '#0288d1',
+                                                                                            ? theme.palette.success.main
+                                                                                            : theme.palette.info.main,
                                                                             }}
                                                                         >
                                                                             {step.user_name || 'System User'}
@@ -1173,11 +1635,11 @@ const Documents = () => {
                                                                         sx={{
                                                                             mt: 1.5,
                                                                             p: 2,
-                                                                            bgcolor: '#d32f2f', // deep red background
+                                                                            bgcolor: 'error.main',
                                                                             borderRadius: 2,
-                                                                            color: 'white', // white text
-                                                                            boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-                                                                            border: '1px solid #b71c1c',
+                                                                            color: 'error.contrastText',
+                                                                            boxShadow: theme.palette.mode === 'dark' ? '0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.2)',
+                                                                            border: `1px solid ${theme.palette.error.dark}`,
                                                                         }}
                                                                     >
                                                                         <Typography
@@ -1194,7 +1656,7 @@ const Documents = () => {
 
                                                                         <Typography
                                                                             variant="body2"
-                                                                            sx={{ mt: 0.5, fontStyle: 'italic', color: 'white' }}
+                                                                            sx={{ mt: 0.5, fontStyle: 'italic', color: 'error.contrastText' }}
                                                                         >
                                                                             Reason:&nbsp;
                                                                             {dynamicRoutingData.document.cancel_note || 'No reason provided.'}
@@ -1203,7 +1665,7 @@ const Documents = () => {
                                                                         {dynamicRoutingData.document.canceled_at && (
                                                                             <Typography
                                                                                 variant="caption"
-                                                                                sx={{ mt: 0.5, display: 'block', opacity: 0.9, color: 'white' }}
+                                                                                sx={{ mt: 0.5, display: 'block', opacity: 0.9, color: 'error.contrastText' }}
                                                                             >
                                                                                 Date: {new Date(dynamicRoutingData.document.canceled_at).toLocaleString()}
                                                                             </Typography>
@@ -1235,7 +1697,7 @@ const Documents = () => {
                                                     sx={{
                                                         my: 2,
                                                         borderTop: '2px solid',
-                                                        borderColor: '#d32f2f',
+                                                        borderColor: 'error.main',
                                                         opacity: 0.4,
                                                     }}
                                                 />
@@ -1244,11 +1706,11 @@ const Documents = () => {
                                                     sx={{
                                                         mt: 2,
                                                         p: 2.5,
-                                                        bgcolor: '#d32f2f', // deep red background
+                                                        bgcolor: 'error.main',
                                                         borderRadius: 2,
-                                                        color: 'white',
-                                                        border: '1px solid #b71c1c',
-                                                        boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                                                        color: 'error.contrastText',
+                                                        border: `1px solid ${theme.palette.error.dark}`,
+                                                        boxShadow: theme.palette.mode === 'dark' ? '0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.2)',
                                                     }}
                                                 >
                                                     <Typography
@@ -1264,7 +1726,7 @@ const Documents = () => {
                                                         {selectedDocumentForRouting.canceled_by_name || 'Unknown User'}
                                                     </Typography>
 
-                                                    <Typography variant="body2" sx={{ mt: 1, color: 'white' }}>
+                                                    <Typography variant="body2" sx={{ mt: 1, color: 'error.contrastText' }}>
                                                         <strong>Reason:</strong>{' '}
                                                         {selectedDocumentForRouting.cancel_note || 'No reason provided.'}
                                                     </Typography>
@@ -1276,7 +1738,7 @@ const Documents = () => {
                                                                 mt: 0.75,
                                                                 display: 'block',
                                                                 opacity: 0.9,
-                                                                color: 'white',
+                                                                color: 'error.contrastText',
                                                             }}
                                                         >
                                                             Date:{' '}
@@ -1316,16 +1778,22 @@ const Documents = () => {
 
             {/* Forward Dialog */}
             <Dialog open={forwardDialogOpen} onClose={() => setForwardDialogOpen(false)} maxWidth="md" fullWidth>
-                <DialogTitle>Forward Document</DialogTitle>
-                <DialogContent>
+                <DialogTitle sx={{ pb: 2, fontWeight: 600, fontSize: '1.25rem' }}>
+                    Forward Document
+                </DialogTitle>
+                <DialogContent dividers sx={{ pt: 3 }}>
                     {selectedDocumentForForward && (
                         <Box>
-                            <Typography variant="body1" gutterBottom>
-                                <strong>Document:</strong> {selectedDocumentForForward.title}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                {selectedDocumentForForward.description}
-                            </Typography>
+                            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                                <Typography variant="body1" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
+                                    Document: {selectedDocumentForForward.title}
+                                </Typography>
+                                {selectedDocumentForForward.description && (
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
+                                        {selectedDocumentForForward.description}
+                                    </Typography>
+                                )}
+                            </Box>
 
                             {/* Search Bar */}
                             <TextField
@@ -1333,7 +1801,12 @@ const Documents = () => {
                                 placeholder="Search departments..."
                                 value={forwardSearchTerm}
                                 onChange={(e) => setForwardSearchTerm(e.target.value)}
-                                sx={{ mt: 2, mb: 2 }}
+                                sx={{ 
+                                    mb: 3,
+                                    '& .MuiOutlinedInput-root': {
+                                        borderRadius: 2,
+                                    }
+                                }}
                                 InputProps={{
                                     startAdornment: (
                                         <InputAdornment position="start">
@@ -1343,31 +1816,31 @@ const Documents = () => {
                                 }}
                             />
 
-                            <Typography variant="body2" gutterBottom>
-                                <strong>Select destination department:</strong>
+                            <Typography variant="body2" gutterBottom sx={{ fontWeight: 600, mb: 2, fontSize: '0.95rem' }}>
+                                Select destination department:
                             </Typography>
 
                             {/* Status Display */}
                             {forwardingStatus === 'forwarding' && (
-                                <Box sx={{ mt: 2, mb: 2 }}>
-                                    <LinearProgress />
-                                    <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
+                                <Box sx={{ mt: 2, mb: 3 }}>
+                                    <LinearProgress sx={{ borderRadius: 1, mb: 1.5 }} />
+                                    <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
                                         Forwarding document...
                                     </Typography>
                                 </Box>
                             )}
 
                             {forwardingStatus === 'success' && (
-                                <Box sx={{ mt: 2, mb: 2 }}>
-                                    <Alert severity="success">
+                                <Box sx={{ mt: 2, mb: 3 }}>
+                                    <Alert severity="success" sx={{ borderRadius: 2 }}>
                                         Document forwarded successfully!
                                     </Alert>
                                 </Box>
                             )}
 
                             {forwardingStatus === 'error' && (
-                                <Box sx={{ mt: 2, mb: 2 }}>
-                                    <Alert severity="error">
+                                <Box sx={{ mt: 2, mb: 3 }}>
+                                    <Alert severity="error" sx={{ borderRadius: 2 }}>
                                         Failed to forward document. Please try again.
                                     </Alert>
                                 </Box>
@@ -1376,25 +1849,29 @@ const Documents = () => {
                             {/* Department List */}
                             <Box
                                 sx={{
-                                    mt: 1,
                                     maxHeight: 280,
                                     overflowY: 'auto',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: 1,
+                                    gap: 1.5,
+                                    pr: 1
                                 }}
                             >
                                 {getFilteredDepartments().length > 0 ? (
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
                                         {getFilteredDepartments().map((dept) => (
                                             <Button
                                                 key={dept.id}
                                                 variant="outlined"
                                                 sx={{
                                                     textTransform: 'none',
-                                                    minWidth: 200
+                                                    minWidth: 200,
+                                                    borderRadius: 2,
+                                                    py: 1.25,
+                                                    fontWeight: 500
                                                 }}
                                                 onClick={() => handleForwardToDepartment(dept.id)}
+                                                disabled={forwardingStatus === 'forwarding'}
                                             >
                                                 {dept.name}
                                             </Button>
@@ -1402,25 +1879,32 @@ const Documents = () => {
                                     </Box>
 
                                 ) : (
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                        sx={{ textAlign: 'center', py: 2 }}
-                                    >
-                                        {forwardSearchTerm
-                                            ? 'No departments found matching your search.'
-                                            : 'No available departments for forwarding.'}
-                                    </Typography>
+                                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                            sx={{ fontSize: '0.95rem' }}
+                                        >
+                                            {forwardSearchTerm
+                                                ? 'No departments found matching your search.'
+                                                : 'No available departments for forwarding.'}
+                                        </Typography>
+                                    </Box>
                                 )}
                             </Box>
 
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ p: 2.5, gap: 1 }}>
                     <Button
                         onClick={() => setForwardDialogOpen(false)}
                         disabled={forwardingStatus === 'forwarding'}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3
+                        }}
                     >
                         Cancel
                     </Button>
@@ -1520,6 +2004,7 @@ const Documents = () => {
                                 }}
                             />
 
+
                         </Box>
                     ) : (
                         <Typography>Loading document...</Typography>
@@ -1541,19 +2026,25 @@ const Documents = () => {
 
             {/* Cancel Dialog */}
             <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Cancel Document</DialogTitle>
-                <DialogContent>
+                <DialogTitle sx={{ pb: 2, fontWeight: 600, fontSize: '1.25rem' }}>
+                    Cancel Document
+                </DialogTitle>
+                <DialogContent dividers sx={{ pt: 3 }}>
                     {selectedDocumentForCancel && (
                         <Box>
-                            <Typography variant="body1" gutterBottom>
-                                <strong>Document:</strong> {selectedDocumentForCancel.title}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
-                                {selectedDocumentForCancel.description}
-                            </Typography>
+                            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                                <Typography variant="body1" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
+                                    Document: {selectedDocumentForCancel.title}
+                                </Typography>
+                                {selectedDocumentForCancel.description && (
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem' }}>
+                                        {selectedDocumentForCancel.description}
+                                    </Typography>
+                                )}
+                            </Box>
 
-                            <Alert severity="warning" sx={{ mt: 2 }}>
-                                <Typography variant="body2">
+                            <Alert severity="warning" sx={{ mt: 2, mb: 3, borderRadius: 2 }}>
+                                <Typography variant="body2" sx={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
                                     <strong>Warning:</strong> Cancelling this document will mark it as rejected and remove it from the workflow.
                                     This action cannot be undone.
                                 </Typography>
@@ -1565,15 +2056,22 @@ const Documents = () => {
                                 onChange={(e) => setCancelNote(e.target.value)}
                                 margin="normal"
                                 multiline
-                                minRows={2}
+                                minRows={3}
                                 required
+                                placeholder="Please provide a reason for cancelling this document..."
+                                sx={{ 
+                                    mb: 2,
+                                    '& .MuiOutlinedInput-root': {
+                                        borderRadius: 2,
+                                    }
+                                }}
                             />
 
                             {/* Status Display */}
                             {cancellingStatus === 'cancelling' && (
                                 <Box sx={{ mt: 2, mb: 2 }}>
-                                    <LinearProgress />
-                                    <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
+                                    <LinearProgress sx={{ borderRadius: 1, mb: 1.5 }} />
+                                    <Typography variant="body2" color="primary" sx={{ fontWeight: 500 }}>
                                         Cancelling document...
                                     </Typography>
                                 </Box>
@@ -1581,7 +2079,7 @@ const Documents = () => {
 
                             {cancellingStatus === 'success' && (
                                 <Box sx={{ mt: 2, mb: 2 }}>
-                                    <Alert severity="success">
+                                    <Alert severity="success" sx={{ borderRadius: 2 }}>
                                         Document cancelled successfully!
                                     </Alert>
                                 </Box>
@@ -1589,7 +2087,7 @@ const Documents = () => {
 
                             {cancellingStatus === 'error' && (
                                 <Box sx={{ mt: 2, mb: 2 }}>
-                                    <Alert severity="error">
+                                    <Alert severity="error" sx={{ borderRadius: 2 }}>
                                         Failed to cancel document. Please try again.
                                     </Alert>
                                 </Box>
@@ -1597,10 +2095,15 @@ const Documents = () => {
                         </Box>
                     )}
                 </DialogContent>
-                <DialogActions>
+                <DialogActions sx={{ p: 2.5, gap: 1 }}>
                     <Button
                         onClick={() => setCancelDialogOpen(false)}
                         disabled={cancellingStatus === 'cancelling'}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3
+                        }}
                     >
                         Cancel
                     </Button>
@@ -1609,6 +2112,12 @@ const Documents = () => {
                         variant="contained"
                         color="error"
                         disabled={cancellingStatus === 'cancelling'}
+                        sx={{ 
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            px: 3,
+                            fontWeight: 600
+                        }}
                     >
                         Confirm Cancel
                     </Button>

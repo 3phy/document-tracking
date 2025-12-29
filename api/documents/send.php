@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -131,18 +132,12 @@ try {
     $result = $updateStmt->execute([$target_department_id, $input['document_id']]);
     
     if ($result) {
-        // Log the activity
-        try {
-            $logQuery = "INSERT INTO user_activities (user_id, action, description) VALUES (?, ?, ?)";
-            $logStmt = $db->prepare($logQuery);
-            $logStmt->execute([
-                $payload['user_id'],
-                'send_document',
-                "Sent document '{$document['title']}' to {$destinationDept['name']} department"
-            ]);
-        } catch (Exception $logError) {
-            error_log("Could not log activity: " . $logError->getMessage());
-        }
+        ActivityLogger::log(
+            $db,
+            (int)$payload['user_id'],
+            'send_document',
+            "Sent document '{$document['title']}' (ID: {$input['document_id']}) to {$destinationDept['name']} department"
+        );
         
         // Get the target department name for response
         $target_dept_query = "SELECT name FROM departments WHERE id = ?";

@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -136,6 +137,13 @@ try {
     $stmt->bindParam(':is_active', $is_active, PDO::PARAM_BOOL);
     
     if ($stmt->execute()) {
+        $newUserId = (int)$db->lastInsertId();
+        ActivityLogger::log(
+            $db,
+            (int)$payload['user_id'],
+            'create_staff',
+            "Created staff '{$name}' (ID: {$newUserId}, role: {$role})"
+        );
         echo json_encode([
             'success' => true,
             'message' => 'Staff member created successfully'

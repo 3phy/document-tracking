@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../utils/activity_logger.php';
 
 header('Content-Type: application/json');
 
@@ -143,11 +144,7 @@ try {
         error_log('Receive history update failed: ' . $e->getMessage());
     }
 
-    // Activity log (optional)
-    try {
-        $act = $db->prepare("INSERT INTO user_activities (user_id, action, description, created_at) VALUES (?, ?, ?, NOW())");
-        $act->execute([$userId, 'receive_document', "Received document '{$doc['title']}'"]);
-    } catch (Exception $e) {}
+    ActivityLogger::log($db, $userId, 'receive_document', "Received document '{$doc['title']}' (ID: " . (int)$doc['id'] . ")");
 
     echo json_encode([
         'success' => true,

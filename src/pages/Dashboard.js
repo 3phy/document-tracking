@@ -122,19 +122,27 @@ const Dashboard = () => {
       : true
   );
 
-  // 🔹 Group documents by department
-  const groupedDepartments = Object.entries(
-    documents.reduce((acc, doc) => {
-      const dept =
-        doc.current_department_name ||
-        doc.department_name ||
-        'No Department';
+  // 🔹 Group documents by department - count same way as DepartmentDocuments.js filters
+  // Get all unique department names (from both current_department_name and department_name)
+  const allDepartmentNames = new Set();
+  documents.forEach((doc) => {
+    if (doc.current_department_name) {
+      allDepartmentNames.add(doc.current_department_name);
+    }
+    if (doc.department_name) {
+      allDepartmentNames.add(doc.department_name);
+    }
+  });
 
-      acc[dept] = acc[dept] || [];
-      acc[dept].push(doc);
-      return acc;
-    }, {})
-  );
+  // Count documents for each department (matching DepartmentDocuments.js filter logic)
+  const groupedDepartments = Array.from(allDepartmentNames).map((deptName) => {
+    const docs = documents.filter(
+      (doc) =>
+        doc.current_department_name === deptName ||
+        doc.department_name === deptName
+    );
+    return [deptName, docs];
+  });
 
   if (loading) {
     return (
@@ -150,19 +158,20 @@ const Dashboard = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
-
-      <Typography variant="body1" color="text.secondary" mb={3}>
-        Welcome back, {user?.name}!
-        {userDepartment && (
-          <> You're viewing documents for <strong>{userDepartment}</strong>.</>
-        )}
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
+          Dashboard
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
+          Welcome back, <Box component="span" sx={{ fontWeight: 500 }}>{user?.name}</Box>!
+          {userDepartment && (
+            <> You're viewing documents for <Box component="strong" sx={{ color: 'primary.main' }}>{userDepartment}</Box>.</>
+          )}
+        </Typography>
+      </Box>
 
       {/* 📊 STATS */}
-      <Grid container spacing={3} mb={3}>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
         {[
           { label: 'Total Documents', value: stats.totalDocuments, icon: <DocumentIcon />, color: 'primary.main' },
           { label: 'Outgoing', value: stats.outgoingDocuments, icon: <UploadIcon />, color: 'primary.light' },
@@ -170,15 +179,54 @@ const Dashboard = () => {
           { label: 'Received', value: stats.receivedDocuments, icon: <ReceivedIcon />, color: 'success.main' },
         ].map((item, i) => (
           <Grid item xs={12} sm={6} md={3} key={i}>
-            <Card>
-              <CardContent>
+            <Card 
+              sx={{ 
+                height: '100%',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: 4,
+                }
+              }}
+            >
+              <CardContent sx={{ p: 3 }}>
                 <Box display="flex" alignItems="center">
-                  <Box sx={{ p: 2, borderRadius: 2, bgcolor: item.color, color: 'white', mr: 2 }}>
+                  <Box 
+                    sx={{ 
+                      p: 2, 
+                      borderRadius: 2, 
+                      bgcolor: item.color, 
+                      color: 'white', 
+                      mr: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 56,
+                      height: 56
+                    }}
+                  >
                     {item.icon}
                   </Box>
-                  <Box>
-                    <Typography variant="h4">{item.value}</Typography>
-                    <Typography color="text.secondary">{item.label}</Typography>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography 
+                      variant="h4" 
+                      sx={{ 
+                        fontWeight: 700,
+                        mb: 0.5,
+                        fontSize: { xs: '1.75rem', sm: '2rem' }
+                      }}
+                    >
+                      {item.value}
+                    </Typography>
+                    <Typography 
+                      color="text.secondary" 
+                      sx={{ 
+                        fontSize: '0.875rem',
+                        fontWeight: 500
+                      }}
+                    >
+                      {item.label}
+                    </Typography>
                   </Box>
                 </Box>
               </CardContent>
@@ -188,27 +236,63 @@ const Dashboard = () => {
       </Grid>
 
       {/* 🏢 DEPARTMENTS */}
-      <Typography variant="h6" mb={2}>
-        Departments
-      </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" sx={{ fontWeight: 600, mb: 2.5 }}>
+          Departments
+        </Typography>
+      </Box>
 
-      <Grid container spacing={3} mb={4}>
+      <Grid container spacing={3} sx={{ mb: 5 }}>
         {groupedDepartments.map(([deptName, docs]) => (
           <Grid item xs={12} sm={6} md={4} key={deptName}>
             <Card
-              sx={{ cursor: 'pointer', '&:hover': { boxShadow: 6 } }}
+              sx={{ 
+                cursor: 'pointer', 
+                height: '100%',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                '&:hover': { 
+                  transform: 'translateY(-4px)',
+                  boxShadow: 6 
+                } 
+              }}
               onClick={() =>
                 navigate(`/documents/department/${encodeURIComponent(deptName)}`)
               }
             >
-              <CardContent>
+              <CardContent sx={{ p: 3 }}>
                 <Box display="flex" alignItems="center" gap={2}>
-                  <DepartmentIcon color="primary" />
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight="bold">
+                  <Box
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: 'primary.main',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <DepartmentIcon />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography 
+                      variant="subtitle1" 
+                      fontWeight="bold"
+                      sx={{ 
+                        mb: 0.5,
+                        fontSize: '1rem',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
                       {deptName}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography 
+                      variant="body2" 
+                      color="text.secondary"
+                      sx={{ fontSize: '0.875rem' }}
+                    >
                       {docs.length} document{docs.length !== 1 && 's'}
                     </Typography>
                   </Box>
@@ -222,19 +306,32 @@ const Dashboard = () => {
       <Grid container spacing={3}>
         {/* 🕘 RECENT DOCUMENTS */}
         <Grid item xs={12} md={8}>
-          <Card>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" mb={2}>
-                <Typography variant="h6">Recent Documents</Typography>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box 
+                display="flex" 
+                justifyContent="space-between" 
+                alignItems="center"
+                sx={{ mb: 3, flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 2 }}
+              >
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Recent Documents
+                </Typography>
                 <TextField
                   size="small"
-                  placeholder="Search..."
+                  placeholder="Search documents..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  sx={{ 
+                    minWidth: { xs: '100%', sm: 250 },
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                    }
+                  }}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
-                        <SearchIcon />
+                        <SearchIcon fontSize="small" />
                       </InputAdornment>
                     ),
                   }}
@@ -242,27 +339,55 @@ const Dashboard = () => {
               </Box>
 
               {filteredRecentDocs.length ? (
-                <List>
+                <List sx={{ p: 0 }}>
                   {filteredRecentDocs.map((doc, i) => (
-                    <ListItem key={i} divider>
-                      <ListItemIcon>{getStatusIcon(doc.status)}</ListItemIcon>
+                    <ListItem 
+                      key={i} 
+                      divider={i < filteredRecentDocs.length - 1}
+                      sx={{ 
+                        py: 2,
+                        px: 0,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                          borderRadius: 1,
+                        }
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 40 }}>
+                        {getStatusIcon(doc.status)}
+                      </ListItemIcon>
                       <ListItemText
-                        primary={doc.title}
-                        secondary={doc.department_name}
+                        primary={
+                          <Typography variant="body1" sx={{ fontWeight: 500, mb: 0.5 }}>
+                            {doc.title}
+                          </Typography>
+                        }
+                        secondary={
+                          <Typography variant="body2" color="text.secondary">
+                            {doc.department_name}
+                          </Typography>
+                        }
+                        sx={{ mr: 2 }}
                       />
                       <Chip
                         label={doc.status}
                         size="small"
                         color={getStatusColor(doc.status)}
-                        sx={{ textTransform: 'capitalize' }}
+                        sx={{ 
+                          textTransform: 'capitalize',
+                          fontWeight: 500,
+                          minWidth: 80
+                        }}
                       />
                     </ListItem>
                   ))}
                 </List>
               ) : (
-                <Typography color="text.secondary" textAlign="center">
-                  No documents found
-                </Typography>
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <Typography color="text.secondary" sx={{ fontSize: '0.95rem' }}>
+                    No documents found
+                  </Typography>
+                </Box>
               )}
             </CardContent>
           </Card>
@@ -270,9 +395,9 @@ const Dashboard = () => {
 
         {/* ⚡ QUICK ACTIONS — NOT REMOVED */}
         <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
                 Quick Actions
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -281,6 +406,13 @@ const Dashboard = () => {
                   startIcon={<UploadIcon />}
                   fullWidth
                   onClick={() => navigate('/documents')}
+                  sx={{
+                    py: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.95rem'
+                  }}
                 >
                   Upload Document
                 </Button>
@@ -289,6 +421,13 @@ const Dashboard = () => {
                   startIcon={<DocumentIcon />}
                   fullWidth
                   onClick={() => navigate('/documents')}
+                  sx={{
+                    py: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 500,
+                    fontSize: '0.95rem'
+                  }}
                 >
                   View All Documents
                 </Button>
@@ -298,6 +437,13 @@ const Dashboard = () => {
                     startIcon={<TrendingIcon />}
                     fullWidth
                     onClick={() => navigate('/reports')}
+                    sx={{
+                      py: 1.5,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      fontWeight: 500,
+                      fontSize: '0.95rem'
+                    }}
                   >
                     Generate Report
                   </Button>

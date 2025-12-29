@@ -1,6 +1,7 @@
 <?php
 require_once '../config/cors.php';
 require_once '../config/database.php';
+require_once '../config/auth.php';
 require_once '../config/jwt.php';
 
 $database = new Database();
@@ -33,6 +34,9 @@ if (!$payload || $payload['exp'] < time()) {
 }
 
 try {
+    // Step-up auth: confirm password for this sensitive export action
+    Auth::requirePasswordConfirmation($payload, 'reports_export');
+
     // Get user's current role and department from database (more reliable than JWT token)
     $user_query = "SELECT role, department_id FROM users WHERE id = ?";
     $user_stmt = $db->prepare($user_query);
@@ -70,25 +74,31 @@ try {
     
     // Build query with filters
     $query = "SELECT d.title, d.description, d.status, d.barcode, d.uploaded_at, d.received_at, 
-                     u.name as uploaded_by_name, r.name as received_by_name, dept.name as department_name 
+                     u.name as uploaded_by_name, r.name as received_by_name, dept.name as department_name,
+                     upload_dept.name as upload_department_name
               FROM documents d 
               LEFT JOIN users u ON d.uploaded_by = u.id 
               LEFT JOIN users r ON d.received_by = r.id 
               LEFT JOIN departments dept ON d.department_id = dept.id 
+              LEFT JOIN departments upload_dept ON d.upload_department_id = upload_dept.id
               LEFT JOIN document_forwarding_history dfh ON d.id = dfh.document_id
               WHERE 1=1";
     
     $params = [];
     
     // For department_head, only show documents that have been passed to their department
+    // NOTE: use distinct placeholders; PDO (native prepares) can error if the same named placeholder is reused.
     if ($user_role === 'department_head' && $user_dept_id) {
         $query .= " AND (
                     d.department_id = :dept_id 
-                    OR d.current_department_id = :dept_id 
-                    OR dfh.to_department_id = :dept_id
-                    OR dfh.from_department_id = :dept_id
+                    OR d.current_department_id = :dept_id_curr 
+                    OR dfh.to_department_id = :dept_id_history_to
+                    OR dfh.from_department_id = :dept_id_history_from
                   )";
         $params[':dept_id'] = $user_dept_id;
+        $params[':dept_id_curr'] = $user_dept_id;
+        $params[':dept_id_history_to'] = $user_dept_id;
+        $params[':dept_id_history_from'] = $user_dept_id;
     }
     
     if ($date_from) {
@@ -136,7 +146,7 @@ try {
         'Sended To',
         'Status',
         'Barcode',
-        'Created By',
+        'Created Department',
         'Received By',
         'Upload Date',
         'Received Date'
@@ -150,7 +160,7 @@ try {
             $report['department_name'] ?: 'No Department',
             $report['status'],
             $report['barcode'],
-            $report['uploaded_by_name'],
+            $report['upload_department_name'] ?: 'No Department',
             $report['received_by_name'],
             $report['uploaded_at'],
             $report['received_at']
@@ -161,6 +171,7 @@ try {
     exit();
 } catch (Exception $e) {
     http_response_code(500);
+    error_log("Reports Export API Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'Database error']);
 }
 ?>

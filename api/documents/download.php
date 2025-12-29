@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -82,6 +83,14 @@ try {
         echo json_encode(['success' => false, 'message' => 'Document not found or access denied']);
         exit();
     }
+
+    // Activity log (best-effort). Do this before streaming file contents.
+    ActivityLogger::log(
+        $db,
+        (int)$user_id,
+        $isPreview ? 'preview_document' : 'download_document',
+        ($isPreview ? "Previewed" : "Downloaded") . " document '{$document['title']}' (ID: {$document_id})"
+    );
 
     // Resolve file path (handle both relative and absolute paths)
     $file_path = $document['file_path'];

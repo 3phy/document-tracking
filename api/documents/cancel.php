@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -93,22 +94,12 @@ try {
         exit();
     }
 
-    // ✅ Check cancellation rights based on document status
-    $canCancel = false;
-    $status = strtolower($document['status']);
-    
-    if ($status === 'outgoing') {
-        // When forwarded (outgoing), only the receiving department (department_id) can cancel
-        // The forwarding department (current_department_id) loses the right to cancel
-        $canCancel = ((int)$document['department_id'] === (int)$userDeptId);
-    } else {
-        // For pending/received, the current holder department can cancel
-        $canCancel = ((int)$document['current_department_id'] === (int)$userDeptId);
-    }
+    // ✅ Only the current department can cancel the document
+    $canCancel = ((int)$document['current_department_id'] === (int)$userDeptId);
 
     if (!$canCancel) {
         http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'You are not authorized to cancel this document. Only the receiving department can cancel forwarded documents.']);
+        echo json_encode(['success' => false, 'message' => 'You are not authorized to cancel this document. Only the current department can cancel documents.']);
         exit();
     }
 
@@ -129,18 +120,12 @@ try {
     $updateStmt->bindParam(':document_id', $document_id);
     $updateStmt->execute();
 
-    // ✅ Log user action (optional but good for audit trail)
-    try {
-        $logQuery = "INSERT INTO user_activities (user_id, action, description) VALUES (?, ?, ?)";
-        $logStmt = $db->prepare($logQuery);
-        $logStmt->execute([
-            $payload['user_id'],
-            'cancel_document',
-            "Cancelled document '{$document['title']}' - marked as rejected"
-        ]);
-    } catch (Exception $e) {
-        error_log("Activity log error: " . $e->getMessage());
-    }
+    ActivityLogger::log(
+        $db,
+        (int)$payload['user_id'],
+        'cancel_document',
+        "Cancelled document '{$document['title']}' (ID: {$document_id}) - marked as rejected"
+    );
 
     // ✅ Return fresh document state to frontend
     echo json_encode([

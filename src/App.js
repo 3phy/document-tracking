@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Box } from '@mui/material';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import StaffManagement from './pages/StaffManagement';
@@ -12,6 +13,29 @@ import SystemAdmin from './pages/SystemAdmin';
 import Settings from './pages/Settings';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import DepartmentDocuments from './pages/DepartmentDocuments';
+
+function PrivateLayout({ sidebarOpen, setSidebarOpen }) {
+  return (
+    <Box sx={{ display: 'flex' }}>
+      <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh',
+          backgroundColor: 'background.default',
+        }}
+      >
+        <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+        <Box sx={{ flexGrow: 1, p: 3 }}>
+          <Outlet />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -30,56 +54,41 @@ function AppContent() {
     );
   }
 
-  if (!user) {
-    return <Login />;
-  }
-
   return (
-    <Box sx={{ display: 'flex' }}>
-      <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100vh',
-          backgroundColor: 'background.default',
-        }}
-      >
-        <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <Box sx={{ flexGrow: 1, p: 3 }}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route
+        path="/forgot-password"
+        element={user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />}
+      />
 
-            {/* 📄 Documents */}
-            <Route path="/documents" element={<Documents />} />
-            <Route
-              path="/documents/department/:departmentName"
-              element={<DepartmentDocuments />}
-            />
+      {!user ? (
+        <Route path="/*" element={<Navigate to="/login" replace />} />
+      ) : (
+        <Route element={<PrivateLayout sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />}>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
 
-            {(user.role === 'admin' || user.role === 'department_head') && (
-              <Route path="/staff" element={<StaffManagement />} />
-            )}
+          {/* 📄 Documents */}
+          <Route path="/documents" element={<Documents />} />
+          <Route path="/documents/department/:departmentName" element={<DepartmentDocuments />} />
 
-            {user.role === 'admin' && (
-              <Route path="/system-admin" element={<SystemAdmin />} />
-            )}
+          {(user.role === 'admin' || user.role === 'department_head') && (
+            <Route path="/staff" element={<StaffManagement />} />
+          )}
 
-            {(user.role === 'admin' || user.role === 'department_head') && (
-              <Route path="/reports" element={<Reports />} />
-            )}
+          {user.role === 'admin' && <Route path="/system-admin" element={<SystemAdmin />} />}
 
-            <Route path="/settings" element={<Settings />} />
+          {(user.role === 'admin' || user.role === 'department_head') && (
+            <Route path="/reports" element={<Reports />} />
+          )}
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
+          <Route path="/settings" element={<Settings />} />
 
-        </Box>
-      </Box>
-    </Box>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      )}
+    </Routes>
   );
 }
 

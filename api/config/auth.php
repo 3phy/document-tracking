@@ -8,6 +8,37 @@ require_once __DIR__ . '/database.php';
 
 class Auth {
     /**
+     * Get a request header value (case-insensitive), with fallbacks for servers that
+     * don't populate getallheaders().
+     * @param string $name
+     * @return string|null
+     */
+    private static function getHeaderValue($name) {
+        $value = null;
+
+        // Try getallheaders() first (works on Apache)
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+            foreach ($headers as $k => $v) {
+                if (strcasecmp($k, $name) === 0) {
+                    $value = $v;
+                    break;
+                }
+            }
+        }
+
+        // Fallback to $_SERVER
+        if ($value === null) {
+            $serverKey = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+            if (isset($_SERVER[$serverKey])) {
+                $value = $_SERVER[$serverKey];
+            }
+        }
+
+        return $value !== null ? trim((string)$value) : null;
+    }
+
+    /**
      * Get and verify JWT token from request headers
      * @return array|false Returns payload array on success, false on failure
      */
@@ -52,6 +83,63 @@ class Auth {
         }
 
         return $payload;
+    }
+
+    /**
+     * Verify a short-lived password-confirmation token provided in X-Confirm-Token header.
+     * @param array $authPayload The already-validated main JWT payload from Authorization header.
+     * @param string $requiredPurpose Purpose string to bind confirmation to an action.
+     * @return array|false Returns confirm-token payload on success, false on failure.
+     */
+    public static function verifyPasswordConfirmation($authPayload, $requiredPurpose) {
+        if (!isset($authPayload['user_id'])) {
+            return false;
+        }
+
+        $confirmToken = self::getHeaderValue('X-Confirm-Token');
+        if (empty($confirmToken)) {
+            return false;
+        }
+
+        $jwt = new JWT();
+        $payload = $jwt->decode($confirmToken);
+        if (!$payload) {
+            return false;
+        }
+
+        // Basic claims
+        if (!isset($payload['exp']) || $payload['exp'] < time()) {
+            return false;
+        }
+        if (!isset($payload['type']) || $payload['type'] !== 'password_confirm') {
+            return false;
+        }
+        if (!isset($payload['user_id']) || (int)$payload['user_id'] !== (int)$authPayload['user_id']) {
+            return false;
+        }
+        if (!isset($payload['purpose']) || $payload['purpose'] !== $requiredPurpose) {
+            return false;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Require password confirmation, otherwise send a 403 and exit.
+     * @param array $authPayload Main JWT payload
+     * @param string $requiredPurpose
+     */
+    public static function requirePasswordConfirmation($authPayload, $requiredPurpose) {
+        $ok = self::verifyPasswordConfirmation($authPayload, $requiredPurpose);
+        if (!$ok) {
+            http_response_code(403);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Password confirmation required'
+            ]);
+            exit();
+        }
+        return $ok;
     }
 
     /**

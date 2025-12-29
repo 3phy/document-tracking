@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -128,6 +129,12 @@ try {
     
     if ($stmt->execute()) {
         $status_text = $is_active ? 'activated' : 'deactivated';
+        ActivityLogger::log(
+            $db,
+            (int)$payload['user_id'],
+            'toggle_staff_status',
+            "Staff member (ID: {$user_id}) {$status_text}"
+        );
         echo json_encode([
             'success' => true,
             'message' => "Staff member {$status_text} successfully"

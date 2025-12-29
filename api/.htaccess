@@ -1,0 +1,13 @@
+# Enable CORS for API endpoints
+# Ensure OPTIONS requests reach PHP (let PHP handle CORS headers)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Don't interfere with OPTIONS - let PHP handle it
+</IfModule>
+
+# Ensure PHP files are processed
+<FilesMatch "\.php$">
+    SetHandler application/x-httpd-php
+</FilesMatch>
+

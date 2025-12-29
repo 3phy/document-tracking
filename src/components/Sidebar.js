@@ -81,64 +81,126 @@ const Sidebar = ({ open, onToggle }) => {
   };
 
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="h6" color="primary" fontWeight="bold">
-          DocTrack
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'background.paper' }}>
+      {/* Header Section */}
+      <Box 
+        sx={{ 
+          p: 3, 
+          textAlign: 'center',
+          bgcolor: 'primary.main',
+          color: 'white',
+          borderBottom: '1px solid',
+          borderColor: 'divider'
+        }}
+      >
+        <Typography 
+          variant="h6" 
+          sx={{ 
+            fontWeight: 700,
+            mb: 0.5,
+            fontSize: '1.1rem',
+            letterSpacing: '0.5px'
+          }}
+        >
           Document Tracking System
         </Typography>
+        <Typography 
+          variant="caption" 
+          sx={{ 
+            fontSize: '0.75rem',
+            opacity: 0.9,
+            display: 'block'
+          }}
+        >
+          Office Document Progress Tracking System
+        </Typography>
       </Box>
+      
       <Divider />
-      <List sx={{ flexGrow: 1, pt: 1 }}>
-        {filteredMenuItems.map((item) => (
-          <ListItem
-            key={item.text}
-            button
-            onClick={() => navigate(item.path)}
-            selected={location.pathname === item.path}
-            sx={{
-              mx: 1,
-              borderRadius: 1,
-              '&.Mui-selected': {
-                backgroundColor: theme.palette.primary.main,
-                color: 'white',
+      
+      {/* Menu Items */}
+      <List sx={{ flexGrow: 1, pt: 2, px: 1.5 }}>
+        {filteredMenuItems.map((item) => {
+          const isSelected = location.pathname === item.path;
+          return (
+            <ListItem
+              key={item.text}
+              button
+              onClick={() => navigate(item.path)}
+              selected={isSelected}
+              sx={{
+                mb: 0.75,
+                borderRadius: 2,
+                py: 1.25,
+                px: 2,
+                transition: 'all 0.2s ease-in-out',
                 '&:hover': {
-                  backgroundColor: theme.palette.primary.dark,
+                  bgcolor: isSelected ? 'primary.dark' : 'action.hover',
+                  transform: 'translateX(4px)',
                 },
-                '& .MuiListItemIcon-root': {
+                '&.Mui-selected': {
+                  backgroundColor: theme.palette.primary.main,
                   color: 'white',
+                  boxShadow: `0 2px 8px ${theme.palette.primary.main}40`,
+                  '&:hover': {
+                    backgroundColor: theme.palette.primary.dark,
+                    transform: 'translateX(4px)',
+                  },
+                  '& .MuiListItemIcon-root': {
+                    color: 'white',
+                  },
+                  '& .MuiListItemText-primary': {
+                    fontWeight: 600,
+                  },
                 },
-              },
-            }}
-          >
-            <ListItemIcon>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText primary={item.text} />
-          </ListItem>
-        ))}
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 40 }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText 
+                primary={item.text}
+                primaryTypographyProps={{
+                  fontSize: '0.95rem',
+                  fontWeight: isSelected ? 600 : 500,
+                }}
+              />
+            </ListItem>
+          );
+        })}
       </List>
+      
       <Divider />
-      <List>
+      
+      {/* Logout Section */}
+      <List sx={{ px: 1.5, pb: 2 }}>
         <ListItem
           button
           onClick={handleLogout}
           sx={{
-            mx: 1,
-            borderRadius: 1,
+            borderRadius: 2,
+            py: 1.25,
+            px: 2,
             color: theme.palette.error.main,
+            transition: 'all 0.2s ease-in-out',
             '&:hover': {
-              backgroundColor: theme.palette.error.light,
+              backgroundColor: theme.palette.error.main,
               color: 'white',
+              transform: 'translateX(4px)',
+              boxShadow: `0 2px 8px ${theme.palette.error.main}40`,
             },
           }}
         >
-          <ListItemIcon sx={{ color: 'inherit' }}>
+          <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
             <LogoutIcon />
           </ListItemIcon>
-          <ListItemText primary="Logout" />
+          <ListItemText 
+            primary="Logout"
+            primaryTypographyProps={{
+              fontSize: '0.95rem',
+              fontWeight: 500,
+            }}
+          />
         </ListItem>
       </List>
     </Box>
@@ -155,6 +217,8 @@ const Sidebar = ({ open, onToggle }) => {
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
+          borderRight: '1px solid',
+          borderColor: 'divider',
         },
       }}
     >

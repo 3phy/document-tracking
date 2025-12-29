@@ -175,21 +175,43 @@ const Settings = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Settings
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Manage your profile and account settings
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, mb: 1 }}>
+          Settings
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: '1rem' }}>
+          Manage your profile and account settings
+        </Typography>
+      </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert 
+          severity="error" 
+          sx={{ 
+            mb: 3,
+            borderRadius: 2,
+            '& .MuiAlert-message': {
+              fontSize: '0.95rem',
+            }
+          }} 
+          onClose={() => setError('')}
+        >
           {error}
         </Alert>
       )}
 
       {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+        <Alert 
+          severity="success" 
+          sx={{ 
+            mb: 3,
+            borderRadius: 2,
+            '& .MuiAlert-message': {
+              fontSize: '0.95rem',
+            }
+          }} 
+          onClose={() => setSuccess('')}
+        >
           {success}
         </Alert>
       )}
@@ -197,11 +219,23 @@ const Settings = () => {
       <Grid container spacing={3}>
         {/* Profile Information */}
         <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={3}>
-                <PersonIcon color="primary" />
-                <Typography variant="h6">
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                <Box
+                  sx={{
+                    p: 1,
+                    borderRadius: 2,
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <PersonIcon />
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   Profile Information
                 </Typography>
               </Box>
@@ -213,6 +247,12 @@ const Settings = () => {
                 onChange={(e) => setName(e.target.value)}
                 margin="normal"
                 required
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
               />
 
               <TextField
@@ -223,6 +263,12 @@ const Settings = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 margin="normal"
                 required
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
               />
 
               {user?.department_name && (
@@ -233,6 +279,12 @@ const Settings = () => {
                   margin="normal"
                   disabled
                   helperText="Department cannot be changed"
+                  sx={{ 
+                    mb: 2,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                    }
+                  }}
                 />
               )}
 
@@ -247,6 +299,11 @@ const Settings = () => {
                   }
                   margin="normal"
                   disabled
+                  sx={{ 
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                    }
+                  }}
                 />
               )}
             </CardContent>
@@ -255,17 +312,39 @@ const Settings = () => {
 
         {/* Appearance */}
         <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={3}>
-                {mode === 'dark' ? <DarkModeIcon color="primary" /> : <LightModeIcon color="primary" />}
-                <Typography variant="h6">
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                <Box
+                  sx={{
+                    p: 1,
+                    borderRadius: 2,
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {mode === 'dark' ? <DarkModeIcon /> : <LightModeIcon />}
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   Appearance
                 </Typography>
               </Box>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
+              <Box 
+                display="flex" 
+                alignItems="center" 
+                justifyContent="space-between"
+                sx={{ 
+                  p: 2,
+                  bgcolor: 'grey.50',
+                  borderRadius: 2,
+                  mb: 2
+                }}
+              >
                 <Box display="flex" alignItems="center" gap={2}>
-                  <Typography variant="body1">
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
                     {mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
                   </Typography>
                 </Box>
@@ -278,9 +357,10 @@ const Settings = () => {
                     />
                   }
                   label={mode === 'dark' ? 'Dark' : 'Light'}
+                  sx={{ m: 0 }}
                 />
               </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
                 Toggle between light and dark theme. Your preference will be saved automatically.
               </Typography>
             </CardContent>
@@ -289,16 +369,28 @@ const Settings = () => {
 
         {/* Change Password */}
         <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={1} mb={3}>
-                <LockIcon color="primary" />
-                <Typography variant="h6">
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box display="flex" alignItems="center" gap={1.5} mb={3}>
+                <Box
+                  sx={{
+                    p: 1,
+                    borderRadius: 2,
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <LockIcon />
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
                   Change Password
                 </Typography>
               </Box>
 
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: '0.9rem' }}>
                 Leave blank if you don't want to change your password
               </Typography>
 
@@ -309,12 +401,19 @@ const Settings = () => {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 margin="normal"
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                         edge="end"
+                        size="small"
                       >
                         {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
@@ -331,12 +430,19 @@ const Settings = () => {
                 onChange={(e) => setNewPassword(e.target.value)}
                 margin="normal"
                 helperText="Minimum 6 characters"
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         onClick={() => setShowNewPassword(!showNewPassword)}
                         edge="end"
+                        size="small"
                       >
                         {showNewPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
@@ -352,12 +458,18 @@ const Settings = () => {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 margin="normal"
+                sx={{ 
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 2,
+                  }
+                }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                         edge="end"
+                        size="small"
                       >
                         {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
@@ -370,13 +482,21 @@ const Settings = () => {
         </Grid>
       </Grid>
 
-      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+      <Box sx={{ mt: 4, display: 'flex', gap: 2 }}>
         <Button
           variant="contained"
           startIcon={<SaveIcon />}
           onClick={handleSaveProfile}
           disabled={saving}
           size="large"
+          sx={{
+            borderRadius: 2,
+            textTransform: 'none',
+            px: 4,
+            py: 1.5,
+            fontWeight: 600,
+            fontSize: '1rem'
+          }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>

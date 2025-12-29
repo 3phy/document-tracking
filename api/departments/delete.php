@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -99,19 +100,7 @@ try {
     $result = $stmt->execute([$input['id']]);
     
     if ($result) {
-        // Log the activity (if table exists)
-        try {
-            $logQuery = "INSERT INTO user_activities (user_id, action, description) VALUES (?, ?, ?)";
-            $logStmt = $db->prepare($logQuery);
-            $logStmt->execute([
-                $payload['user_id'],
-                'delete_department',
-                "Deleted department: " . $existingDept['name']
-            ]);
-        } catch (Exception $logError) {
-            // Log table might not exist, continue without logging
-            error_log("Could not log activity: " . $logError->getMessage());
-        }
+        ActivityLogger::log($db, (int)$payload['user_id'], 'delete_department', "Deleted department: " . $existingDept['name']);
         
         echo json_encode([
             'success' => true,

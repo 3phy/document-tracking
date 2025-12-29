@@ -1,0 +1,21 @@
+# Root .htaccess for document-tracking
+# Ensure CORS headers are handled properly for API endpoints
+
+<IfModule mod_headers.c>
+    # Set CORS headers for API endpoints - use "always" to ensure they're sent for OPTIONS
+    <FilesMatch "^(.*/)?api/.*\.php$">
+        Header always set Access-Control-Allow-Origin "http://localhost:3000"
+        Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-Confirm-Token, Accept"
+        Header always set Access-Control-Allow-Credentials "true"
+        Header always set Access-Control-Max-Age "3600"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Ensure OPTIONS requests reach PHP
+    RewriteCond %{REQUEST_METHOD} ^OPTIONS
+    RewriteRule ^(.*)$ - [L]
+</IfModule>
+

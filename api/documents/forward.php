@@ -3,6 +3,7 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth.php';
 require_once '../config/response.php';
+require_once '../utils/activity_logger.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     Response::methodNotAllowed();
@@ -135,6 +136,13 @@ try {
         $toDeptId,
         $userId
     ]);
+
+    ActivityLogger::log(
+        $db,
+        $userId,
+        'forward_document',
+        "Forwarded document (ID: {$documentId}) from dept {$userDeptId} to dept {$toDeptId}"
+    );
 
     /* ======================================================
        7. SUCCESS RESPONSE

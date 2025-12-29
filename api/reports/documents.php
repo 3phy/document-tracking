@@ -69,12 +69,19 @@ try {
     $user_id = isset($_GET['user_id']) ? $_GET['user_id'] : null;
     
     // Build query with filters
-    $query = "SELECT d.*, u.name as uploaded_by_name, r.name as received_by_name, dept.name as department_name, curr_dept.name as current_department_name
+    // NOTE: "Created By" in reports is shown as the uploader's department name (upload_department_name)
+    $query = "SELECT d.*, 
+                     u.name as uploaded_by_name, 
+                     r.name as received_by_name, 
+                     dept.name as department_name, 
+                     curr_dept.name as current_department_name,
+                     upload_dept.name as upload_department_name
               FROM documents d 
               LEFT JOIN users u ON d.uploaded_by = u.id 
               LEFT JOIN users r ON d.received_by = r.id 
               LEFT JOIN departments dept ON d.department_id = dept.id 
               LEFT JOIN departments curr_dept ON d.current_department_id = curr_dept.id
+              LEFT JOIN departments upload_dept ON d.upload_department_id = upload_dept.id
               WHERE 1=1";
     
     $params = [];

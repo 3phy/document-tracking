@@ -1,15 +1,33 @@
 <?php
-require_once __DIR__ . '/env.php';
-
 /**
  * CORS Configuration
  * Handles Cross-Origin Resource Sharing headers
  */
+
+// Handle OPTIONS FIRST - before any includes
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $allowed_origins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    $allow_origin = in_array($origin, $allowed_origins) ? $origin : $allowed_origins[0];
+    
+    header("Access-Control-Allow-Origin: $allow_origin");
+    header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Confirm-Token, Accept");
+    header("Access-Control-Allow-Credentials: true");
+    header("Access-Control-Max-Age: 3600");
+    http_response_code(200);
+    exit(0);
+}
+
+// Now load env for other requests
+require_once __DIR__ . '/env.php';
+
 class CORS {
     /**
      * Set CORS headers based on environment configuration
+     * @param bool $skipContentType Skip setting Content-Type header (useful for file uploads)
      */
-    public static function setHeaders() {
+    public static function setHeaders($skipContentType = false) {
         $allowedOrigins = Env::get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000');
         $origins = array_map('trim', explode(',', $allowedOrigins));
         
@@ -24,19 +42,18 @@ class CORS {
             header("Access-Control-Allow-Origin: " . $origins[0]);
         }
         
-        header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-        header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+        header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS, PATCH");
+        header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Confirm-Token, Accept");
         header("Access-Control-Allow-Credentials: true");
-        header("Content-Type: application/json; charset=UTF-8");
+        header("Access-Control-Max-Age: 3600");
         
-        // Handle preflight requests
-        if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-            http_response_code(200);
-            exit();
+        // Only set Content-Type if not skipping (for file uploads)
+        if (!$skipContentType) {
+        header("Content-Type: application/json; charset=UTF-8");
         }
     }
 }
 
-// Auto-set headers
+// Auto-set headers for non-OPTIONS requests
 CORS::setHeaders();
 ?>

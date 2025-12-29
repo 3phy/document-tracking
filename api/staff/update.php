@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -183,6 +184,12 @@ try {
     $stmt->bindParam(':user_id', $user_id);
     
     if ($stmt->execute()) {
+        ActivityLogger::log(
+            $db,
+            (int)$payload['user_id'],
+            'update_staff',
+            "Updated staff '{$name}' (ID: {$user_id})"
+        );
         echo json_encode([
             'success' => true,
             'message' => 'Staff member updated successfully'

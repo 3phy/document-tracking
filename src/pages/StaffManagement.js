@@ -27,7 +27,6 @@ import {
 import {
   Add as AddIcon,
   Edit as EditIcon,
-  Delete as DeleteIcon,
   PersonAdd as PersonAddIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,6 +40,7 @@ const StaffManagement = () => {
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
+  const [showInactive, setShowInactive] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -151,26 +151,6 @@ const StaffManagement = () => {
     setDialogOpen(true);
   };
 
-  const handleDelete = async (staffId) => {
-    if (window.confirm('Are you sure you want to delete this staff member?')) {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await axios.delete(`${API_BASE_URL}/staff/delete.php?id=${staffId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (response.data.success) {
-          fetchStaff();
-        } else {
-          setError(response.data.message || 'Delete failed');
-        }
-      } catch (error) {
-        console.error('Delete error:', error);
-        setError('Delete failed. Please try again.');
-      }
-    }
-  };
-
   const handleToggleStatus = async (staffId, currentStatus) => {
     try {
       const token = localStorage.getItem('token');
@@ -206,6 +186,10 @@ const StaffManagement = () => {
       </Box>
     );
   }
+
+  const visibleStaff = showInactive
+    ? staff.filter((m) => !Boolean(m.is_active))
+    : staff.filter((m) => Boolean(m.is_active));
 
   return (
     <Box>
@@ -248,6 +232,18 @@ const StaffManagement = () => {
 
       <Card>
         <CardContent>
+          <Box display="flex" justifyContent="flex-end" mb={1}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={showInactive}
+                  onChange={(e) => setShowInactive(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label={showInactive ? 'Inactive only' : 'Active only'}
+            />
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -262,7 +258,7 @@ const StaffManagement = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {staff.map((member) => (
+                {visibleStaff.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell>{member.name}</TableCell>
                     <TableCell>{member.email}</TableCell>
@@ -322,26 +318,6 @@ const StaffManagement = () => {
                         }
                       >
                         <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDelete(member.id)}
-                        color="error"
-                        disabled={
-                          member.id === user.id ||
-                          (user?.role === 'department_head' && 
-                           (member.role === 'admin' || member.role === 'department_head'))
-                        }
-                        title={
-                          member.id === user.id
-                            ? 'Cannot delete your own account'
-                            : user?.role === 'department_head' && 
-                              (member.role === 'admin' || member.role === 'department_head')
-                            ? 'Cannot delete administrators or department heads'
-                            : 'Delete staff member'
-                        }
-                      >
-                        <DeleteIcon />
                       </IconButton>
                     </TableCell>
                   </TableRow>

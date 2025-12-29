@@ -3,6 +3,7 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/jwt.php';
 require_once '../config/response.php';
+require_once '../utils/activity_logger.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -50,6 +51,9 @@ try {
             ];
             
             $token = $jwt->encode($payload);
+
+            // Activity log (best-effort)
+            ActivityLogger::log($db, (int)$user['id'], 'login', 'Logged in');
             
             Response::success([
                 'token' => $token,

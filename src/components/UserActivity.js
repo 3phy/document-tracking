@@ -22,6 +22,11 @@ import {
   Alert,
   CircularProgress,
   Avatar,
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -41,6 +46,9 @@ const UserActivity = () => {
   const [error, setError] = useState('');
   const [activities, setActivities] = useState([]);
   const [users, setUsers] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
   const [filters, setFilters] = useState({
     user: 'all',
     action: 'all',
@@ -73,7 +81,8 @@ const UserActivity = () => {
       if (filters.action !== 'all') params.append('action', filters.action);
       if (filters.dateFrom) params.append('date_from', filters.dateFrom);
       if (filters.dateTo) params.append('date_to', filters.dateTo);
-      if (filters.search) params.append('search', filters.search);
+      // Search is handled client-side (like Documents page) to keep the typed value visible
+      // and to avoid backend errors on older DB schemas.
 
       const response = await axios.get(`${API_BASE_URL}/admin/activities.php?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -129,6 +138,91 @@ const UserActivity = () => {
   const handleSearch = () => {
     fetchActivities();
   };
+
+  const openExportDialog = () => {
+    setError('');
+    setExportPassword('');
+    setExportDialogOpen(true);
+  };
+
+  const closeExportDialog = () => {
+    if (exporting) return;
+    setExportDialogOpen(false);
+    setExportPassword('');
+  };
+
+  const handleConfirmAndExport = async () => {
+    const token = localStorage.getItem('token');
+    if (!exportPassword.trim()) {
+      setError('Password is required to export user activities.');
+      return;
+    }
+
+    try {
+      setExporting(true);
+
+      // Step-up auth: confirm password for this sensitive action
+      const confirm = await axios.post(`${API_BASE_URL}/auth/confirm-password.php`, {
+        password: exportPassword,
+        purpose: 'activities_export',
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const confirmToken = confirm?.data?.confirm_token;
+      if (!confirmToken) {
+        setError('Password confirmation failed. Please try again.');
+        return;
+      }
+
+      const params = new URLSearchParams();
+      if (filters.user !== 'all') params.append('user_id', filters.user);
+      if (filters.action !== 'all') params.append('action', filters.action);
+      if (filters.dateFrom) params.append('date_from', filters.dateFrom);
+      if (filters.dateTo) params.append('date_to', filters.dateTo);
+      if ((filters.search || '').trim()) params.append('search', (filters.search || '').trim());
+
+      const response = await axios.get(`${API_BASE_URL}/admin/activities-export.php?${params}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Confirm-Token': confirmToken
+        },
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `user-activities-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      closeExportDialog();
+    } catch (e) {
+      console.error('Export activities error:', e);
+      setError('Export failed. Please confirm your password and try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const searchTerm = (filters.search || '').trim().toLowerCase();
+  const filteredActivities = searchTerm
+    ? activities.filter((a) => {
+        const haystack = [
+          a.user_name,
+          a.user_email,
+          a.action,
+          a.description,
+          a.ip_address
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(searchTerm);
+      })
+    : activities;
 
   const getActionIcon = (action) => {
     switch (action) {
@@ -254,9 +348,19 @@ const UserActivity = () => {
       {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Filter Activities
-          </Typography>
+          <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} sx={{ mb: 1 }}>
+            <Typography variant="h6">
+              Filter Activities
+            </Typography>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={openExportDialog}
+              disabled={exporting}
+            >
+              Export
+            </Button>
+          </Box>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={6} md={2}>
               <FormControl fullWidth size="small">
@@ -322,6 +426,13 @@ const UserActivity = () => {
                 value={filters.search}
                 onChange={(e) => handleFilterChange('search', e.target.value)}
                 placeholder="Search activities..."
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon color="action" />
+                      </InputAdornment>
+                    )
+                  }}
               />
             </Grid>
             <Grid item xs={12} sm={6} md={1}>
@@ -336,6 +447,11 @@ const UserActivity = () => {
               </Button>
             </Grid>
           </Grid>
+            {filters.search?.trim() && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Showing results matching: <strong>{filters.search.trim()}</strong>
+              </Typography>
+            )}
         </CardContent>
       </Card>
 
@@ -357,7 +473,7 @@ const UserActivity = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {activities.map((activity) => (
+                {filteredActivities.map((activity) => (
                   <TableRow key={activity.id}>
                     <TableCell>
                       <Box display="flex" alignItems="center" gap={1}>
@@ -404,15 +520,44 @@ const UserActivity = () => {
             </Table>
           </TableContainer>
           
-          {activities.length === 0 && !loading && (
+          {filteredActivities.length === 0 && !loading && (
             <Box textAlign="center" py={4}>
               <Typography variant="body2" color="text.secondary">
-                No activities found matching your criteria
+                {filters.search?.trim()
+                  ? `No activities found matching "${filters.search.trim()}".`
+                  : 'No activities found matching your criteria'}
               </Typography>
             </Box>
           )}
         </CardContent>
       </Card>
+
+      {/* Export Password Dialog */}
+      <Dialog open={exportDialogOpen} onClose={closeExportDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Confirm Password</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Please enter your password to export user activities.
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="Password"
+            value={exportPassword}
+            onChange={(e) => setExportPassword(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmAndExport();
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeExportDialog} disabled={exporting}>Cancel</Button>
+          <Button onClick={handleConfirmAndExport} variant="contained" disabled={exporting}>
+            {exporting ? 'Please wait...' : 'Export'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
